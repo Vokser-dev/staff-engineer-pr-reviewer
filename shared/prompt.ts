@@ -155,50 +155,79 @@ Please review as a Staff Engineer.${
   }`;
 }
 
+/** Matches ```json fenced blocks; closing ``` may be on the same line or after whitespace. */
+const JSON_FENCE_PATTERN = "```json\\s*\\n([\\s\\S]*?)\\s*```";
+
+function stripJsonCodeBlocks(text: string): string {
+  return text
+    .replace(new RegExp(JSON_FENCE_PATTERN, "gi"), "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function findLastJsonFence(
+  text: string
+): RegExpMatchArray | undefined {
+  const matches = [...text.matchAll(new RegExp(JSON_FENCE_PATTERN, "gi"))];
+  return matches[matches.length - 1];
+}
+
+function parseInlineCommentsPayload(jsonText: string): ReviewComment[] {
+  const parsed = JSON.parse(jsonText) as {
+    inlineComments?: Array<{
+      file?: string;
+      line?: number;
+      severity?: string;
+      body?: string;
+    }>;
+  };
+
+  const inlineSeverities = new Set(["critical", "major"]);
+  const inlineComments: ReviewComment[] = [];
+
+  for (const raw of parsed.inlineComments ?? []) {
+    if (!raw.file || !raw.body || typeof raw.line !== "number") continue;
+    if (!Number.isInteger(raw.line) || raw.line < 1) continue;
+    const severity = (raw.severity ?? "major").toLowerCase();
+    if (!inlineSeverities.has(severity)) continue;
+
+    inlineComments.push({
+      filename: raw.file.replace(/^\//, ""),
+      line: raw.line,
+      body: raw.body.trim(),
+      severity: severity as ReviewComment["severity"],
+    });
+
+    if (inlineComments.length >= MAX_INLINE_COMMENTS) break;
+  }
+
+  return inlineComments;
+}
+
 export function splitReviewResponse(text: string): {
   markdown: string;
   inlineComments: ReviewComment[];
 } {
-  const match = text.match(/```json\r?\n([\s\S]*?)\r?\n```/);
-  if (!match) {
-    return { markdown: text.trim(), inlineComments: [] };
-  }
+  const trimmed = text.trim();
+  const lastMatch = findLastJsonFence(trimmed);
 
-  const markdown = text.slice(0, match.index).trim();
+  const markdownBeforeJson =
+    lastMatch?.index != null
+      ? trimmed.slice(0, lastMatch.index)
+      : trimmed;
 
-  try {
-    const parsed = JSON.parse(match[1]) as {
-      inlineComments?: Array<{
-        file?: string;
-        line?: number;
-        severity?: string;
-        body?: string;
-      }>;
-    };
+  let markdown = stripJsonCodeBlocks(markdownBeforeJson);
+  let inlineComments: ReviewComment[] = [];
 
-    const inlineSeverities = new Set(["critical", "major"]);
-    const inlineComments: ReviewComment[] = [];
-
-    for (const raw of parsed.inlineComments ?? []) {
-      if (!raw.file || !raw.body || typeof raw.line !== "number") continue;
-      if (!Number.isInteger(raw.line) || raw.line < 1) continue;
-      const severity = (raw.severity ?? "major").toLowerCase();
-      if (!inlineSeverities.has(severity)) continue;
-
-      inlineComments.push({
-        filename: raw.file.replace(/^\//, ""),
-        line: raw.line,
-        body: raw.body.trim(),
-        severity: severity as ReviewComment["severity"],
-      });
-
-      if (inlineComments.length >= MAX_INLINE_COMMENTS) break;
+  if (lastMatch) {
+    try {
+      inlineComments = parseInlineCommentsPayload(lastMatch[1].trim());
+    } catch {
+      inlineComments = [];
     }
-
-    return { markdown, inlineComments };
-  } catch {
-    return { markdown: text.trim(), inlineComments: [] };
   }
+
+  return { markdown, inlineComments };
 }
 
 const SEVERITY_LABELS_NO: Record<ReviewComment["severity"], string> = {
