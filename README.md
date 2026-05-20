@@ -31,7 +31,7 @@ In your repo: Settings → Secrets and variables → Actions → New repository 
 
 | Secret | Value |
 |---|---|
-| `ANTHROPIC_API_KEY` | Your Anthropic API key |
+| `ANTHROPIC_API_KEY` | Your Anthropic API key. |
 
 `GITHUB_TOKEN` is provided automatically.
 
