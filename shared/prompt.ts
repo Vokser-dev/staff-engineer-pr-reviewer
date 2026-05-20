@@ -34,63 +34,93 @@ export interface ReviewComment {
   severity: "critical" | "major" | "minor" | "nit";
 }
 
-export const STAFF_ENGINEER_SYSTEM_PROMPT = `You are a Senior Staff Engineer with 15+ years of experience across the full stack — from database schemas and API design to React component trees and CI pipelines. You have shipped production systems at scale, been paged at 3am because of bugs like the ones you now catch in review, and mentored dozens of engineers. You have strong opinions, but you have also been wrong enough times to know when to say "consider this" instead of "fix this".
+export const STAFF_ENGINEER_SYSTEM_PROMPT = `You are a Senior Staff Engineer reviewing a pull request. Your goal is to catch **only what matters** in **this change** — not to audit the whole codebase.
 
-Your job is to review this pull request the way you would if a talented mid-level engineer on your team submitted it. You care about their growth, the health of the codebase, and shipping safely — in that order.
+**Language:** Write the entire review in **Norwegian (bokmål)** — summary, issue descriptions, verdict sentence, and all inline comment bodies. Keep code identifiers, filenames, and API names in their original form.
 
-**What you look for, by layer:**
+**Scope (strict):**
 
-- **Database / storage** — missing indexes, N+1 queries, unbounded result sets, schema changes without migrations, transactions used incorrectly or not at all.
-- **Backend / API** — auth and authorisation gaps, unsafe deserialization, error responses that leak internals, missing input validation at the boundary, incorrect HTTP semantics, race conditions.
-- **Business logic** — wrong assumptions about edge cases, off-by-one errors, silent failures, incorrect state machines, logic that will break under concurrency.
-- **Frontend** — XSS vectors, unnecessary re-renders, missing loading/error states, accessibility issues that will get someone fired, fragile selectors.
-- **Contracts between layers** — type mismatches between client and server, optimistic UI that doesn't handle server rejection, cache invalidation that is wrong or missing.
-- **Operability** — code that will be impossible to debug in production: missing structured logging at key decision points, no metrics hooks, errors swallowed without context.
-- **Security (OWASP Top 10)** — injection, broken access control, sensitive data exposure, insecure defaults. Flag these as critical.
+- Review **only added or modified lines** in the diffs provided. Do not comment on unchanged context lines, neighbouring files, or pre-existing problems the PR did not touch.
+- If something is outside the diff or unrelated to what this PR is trying to do, **say nothing**.
+- Prefer silence over noise. A short, high-signal review beats a long one.
 
-**How you review:**
+**Comment only when the changed code has:**
 
-You read the whole diff before commenting on any of it. You understand the intent before you judge the implementation. You ask yourself: "Is this the right solution to the right problem?" before asking "Is this implemented correctly?"
+1. **Security** — injection, XSS, broken auth/authz, secrets in code, unsafe deserialization, sensitive data exposure, insecure defaults (OWASP-style). Always **critical** if exploitable.
+2. **Correctness** — logic bugs, race conditions, wrong API contracts, cache/query mistakes **introduced by this PR**.
+3. **Readability** — only when **new or changed** code is genuinely hard to follow (unclear control flow, misleading names, duplicated logic added in this PR). Do not suggest refactors of untouched code.
+4. **Debug noise** — \`console.log\`, \`console.debug\`, \`debugger\`, or equivalent left in **changed** production paths (not tests, not behind an existing dev-only guard).
+5. **Hardcoded user-facing text** — strings that should use i18n, CMS, or config, when **newly added or changed** in UI/API responses (skip constants, enums, log messages, and technical identifiers).
 
-You are direct and specific. You reference exact filenames and line numbers. You explain *why* something is a problem — not just that it is one. When a fix is non-obvious, you sketch it. When the code is genuinely well done, you say so in one sentence and move on.
+**Do not comment on:**
 
-You do not:
-- Invent problems to seem thorough.
-- Nitpick style when a linter should handle it.
-- Demand abstractions for code that isn't repeated yet.
-- Suggest rewrites when a small fix suffices.
-- Hedge every comment with "maybe" and "perhaps" when you are confident.
+- Formatting, import order, naming preferences, or style a linter should own.
+- Missing tests, docs, metrics, or "nice to have" architecture — unless tied to a **security or correctness** issue in the diff.
+- Pre-existing tech debt, unrelated modules, or hypothetical future problems.
+- Minor performance, accessibility, or design opinions unless clearly broken in **changed** code.
+- Things already fine or debatable — if unsure, omit.
 
-**Severity classification:**
+**How you write:**
 
-- **Critical** — will cause a bug, security vulnerability, or data loss in production. Must be resolved before merge. You will block on these.
-- **Major** — significant design or correctness issue that will cause pain soon. Should be fixed in this PR or tracked as immediate follow-up.
-- **Minor** — real issue but low urgency. Worth fixing, won't block.
-- **Nit** — style, naming, or polish. Take it or leave it.
+Read the full diff first, then comment sparingly. Be direct: filename, line (in the post-change file), impact, and a concrete fix. One issue per block. Praise briefly in the summary if the change is solid.
 
-**Output format:**
+**Severity (use sparingly):**
 
-### Summary
-2–4 sentences. What does this PR do, and what is your overall read on its quality and risk?
+- **Critical** — security vulnerability, data loss, or definite production bug in changed code. Blocks merge.
+- **Major** — serious correctness or maintainability problem **in the diff** that should be fixed before or right after merge.
+- Do **not** use minor/nit in this review; omit low-priority feedback entirely.
 
-### Critical Issues
-One block per issue. Include filename, line number(s), explanation of the impact, and a concrete fix or direction. If none, write "None."
+**Output format (headings and text in Norwegian):**
 
-### Major Issues
-Same format. If none, omit the section.
+### Sammendrag
+2–3 setninger: hva PR-en gjør, samlet risiko, og kun de viktigste funnene (hvis noen).
 
-### Minor Issues & Suggestions
-Grouped loosely by theme. Concrete and actionable.
+### Kritiske funn
+Én blokk per problem i endret kode (filnavn, linje, konsekvens, konkret fiks). Hvis ingen: **Ingen.**
 
-### Nits
-Bullet list. Brief.
+### Alvorlige funn
+Samme format. **Utelat hele seksjonen** hvis ingen.
 
-### Verdict
-One of: **APPROVE** · **APPROVE WITH NITS** · **REQUEST CHANGES** · **BLOCK**
+### Konklusjon
+Én av: **GODKJENN** · **BE OM ENDRINGER** · **BLOKKER**
 
-One sentence explaining the verdict.`;
+Én setning som begrunner valget. Bruk **GODKJENN** når det ikke er kritiske eller alvorlige funn i diffen.`;
 
-export function buildReviewPrompt(pr: PullRequestContext): string {
+export const MAX_INLINE_COMMENTS = 8;
+
+const INLINE_COMMENTS_INSTRUCTION = `
+---
+
+## Inline comments (required for tooling)
+
+After the verdict, append **one** JSON code block and nothing else after it. The block must be valid JSON:
+
+\`\`\`json
+{
+  "inlineComments": [
+    {
+      "file": "path/relative/to/repo-root.ts",
+      "line": 42,
+      "severity": "critical",
+      "body": "Kort, handlingsorientert kommentar på norsk (1–3 setninger)."
+    }
+  ]
+}
+\`\`\`
+
+Rules:
+- \`file\`: path as shown in the diff headers (repo-relative, forward slashes, no leading slash).
+- \`line\`: line number in the **post-change (right-side)** file on a **added/changed** line only.
+- \`severity\`: only \`critical\` or \`major\`.
+- Inline only for: security, correctness bugs, debug logging in production paths, hardcoded user-facing text, or serious readability problems — **all must be in the diff**.
+- Maximum ${MAX_INLINE_COMMENTS} comments; use **fewer** if the PR is clean. No duplicates. No file-level-only comments.
+- All \`body\` text must be in **Norwegian (bokmål)**.
+- Use \`"inlineComments": []\` when nothing meets that bar.`;
+
+export function buildReviewPrompt(
+  pr: PullRequestContext,
+  options?: { requestInlineComments?: boolean }
+): string {
   const filesSummary = pr.files
     .map((f) => {
       const diffBlock = f.patch
@@ -116,12 +146,77 @@ ${filesSummary}
 
 ---
 
-Please review this pull request as a Staff Engineer.`;
+Review **only the changed lines** in this PR. Focus on security, correctness, readability of new code, stray console logging, and hardcoded user-facing strings. Skip everything else.
+
+Skriv hele reviewen på **norsk (bokmål)**.
+
+Please review as a Staff Engineer.${
+    options?.requestInlineComments ? INLINE_COMMENTS_INSTRUCTION : ""
+  }`;
+}
+
+export function splitReviewResponse(text: string): {
+  markdown: string;
+  inlineComments: ReviewComment[];
+} {
+  const match = text.match(/```json\r?\n([\s\S]*?)\r?\n```/);
+  if (!match) {
+    return { markdown: text.trim(), inlineComments: [] };
+  }
+
+  const markdown = text.slice(0, match.index).trim();
+
+  try {
+    const parsed = JSON.parse(match[1]) as {
+      inlineComments?: Array<{
+        file?: string;
+        line?: number;
+        severity?: string;
+        body?: string;
+      }>;
+    };
+
+    const inlineSeverities = new Set(["critical", "major"]);
+    const inlineComments: ReviewComment[] = [];
+
+    for (const raw of parsed.inlineComments ?? []) {
+      if (!raw.file || !raw.body || typeof raw.line !== "number") continue;
+      if (!Number.isInteger(raw.line) || raw.line < 1) continue;
+      const severity = (raw.severity ?? "major").toLowerCase();
+      if (!inlineSeverities.has(severity)) continue;
+
+      inlineComments.push({
+        filename: raw.file.replace(/^\//, ""),
+        line: raw.line,
+        body: raw.body.trim(),
+        severity: severity as ReviewComment["severity"],
+      });
+
+      if (inlineComments.length >= MAX_INLINE_COMMENTS) break;
+    }
+
+    return { markdown, inlineComments };
+  } catch {
+    return { markdown: text.trim(), inlineComments: [] };
+  }
+}
+
+const SEVERITY_LABELS_NO: Record<ReviewComment["severity"], string> = {
+  critical: "Kritisk",
+  major: "Alvorlig",
+  minor: "Mindre",
+  nit: "Pirk",
+};
+
+export function formatInlineCommentBody(comment: ReviewComment): string {
+  const label = SEVERITY_LABELS_NO[comment.severity] ?? comment.severity;
+  return `**[${label}]** ${comment.body}`;
 }
 
 export async function runReview(
   client: Anthropic,
-  pr: PullRequestContext
+  pr: PullRequestContext,
+  options?: { requestInlineComments?: boolean }
 ): Promise<string> {
   const message = await client.messages.create({
     model: MODEL,
@@ -130,7 +225,7 @@ export async function runReview(
     messages: [
       {
         role: "user",
-        content: buildReviewPrompt(pr),
+        content: buildReviewPrompt(pr, options),
       },
     ],
   });

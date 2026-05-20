@@ -4,28 +4,24 @@ Automated pull request reviews powered by Claude. Posts a structured code review
 
 ## What it reviews
 
-The reviewer acts as a Senior Staff Engineer with 15+ years of fullstack experience. It reads the entire diff before commenting, understands the intent before judging the implementation, and explains *why* something is a problem — not just that it is one.
+Focused review of **changed lines only** — high signal, low noise. Reviews are written in **Norwegian (bokmål)**. It skips pre-existing issues, style nits, and unrelated files.
 
-**Coverage by layer:**
-
-| Layer | What it catches |
+| Priority | What it flags |
 |---|---|
-| Database / storage | Missing indexes, N+1 queries, unbounded result sets, incorrect transactions |
-| Backend / API | Auth gaps, unsafe deserialization, input validation, incorrect HTTP semantics, race conditions |
-| Business logic | Off-by-one errors, silent failures, incorrect state machines, concurrency issues |
-| Frontend | XSS vectors, unnecessary re-renders, missing loading/error states, accessibility issues |
-| Cross-layer contracts | Type mismatches between client and server, broken cache invalidation, optimistic UI that ignores server rejection |
-| Operability | Missing structured logging, swallowed errors without context |
-| Security | OWASP Top 10 — flagged as Critical |
+| Security | Injection, XSS, auth gaps, secrets, unsafe handling of data |
+| Correctness | Bugs and contract mistakes introduced in the diff |
+| Readability | New/changed code that is genuinely hard to follow |
+| Debug noise | `console.log` / `debugger` left in changed production code |
+| Hardcoded text | User-facing strings that should be i18n or config |
 
 **Review output:**
 
-1. Summary (2–4 sentences on quality and risk)
-2. Critical Issues — will block merge
-3. Major Issues — significant design or correctness problems
-4. Minor Issues & Suggestions
-5. Nits
-6. Verdict: **APPROVE** · **APPROVE WITH NITS** · **REQUEST CHANGES** · **BLOCK**
+1. Sammendrag (2–3 setninger)
+2. Kritiske funn (hvis noen)
+3. Alvorlige funn (hvis noen; utelates når tom)
+4. Konklusjon: **GODKJENN** · **BE OM ENDRINGER** · **BLOKKER**
+
+Azure also posts up to 8 **inline** comments on critical/major items in the diff.
 
 ## GitHub Actions
 
@@ -120,6 +116,8 @@ jobs:
 ```
 
 `$(System.PullRequest.PullRequestId)` is set automatically by Azure DevOps on PR builds.
+
+The Azure reviewer posts a **summary** PR comment plus **inline** comments on specific lines (critical/major issues). The PAT needs **Pull Request Threads → Read & Write** (same as above).
 
 **Run manually (one-off):**
 
