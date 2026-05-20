@@ -112,7 +112,7 @@ Regler:
 - \`file\`: sti slik den vises i diff-headerene (repo-relativ, skråstrek fremover, ingen ledende skråstrek).
 - \`line\`: linjenummer i filen **etter endring** på en **lagt til/endret** linje. Avled fra diff \`@@\`-hunk-headerene (\`+start,count\`).
 - \`severity\`: kun \`critical\` eller \`major\`.
-- Inline kun for: sikkerhet, korrekthetsfeil, feilsøkingslogging i produksjonskode, hardkodede brukervendte tekster, eller alvorlige lesbarhetsploblemer — **alt må være i diffen**.
+- Inline kun for: sikkerhet, korrekthetsfeil, feilsøkingslogging i produksjonskode, hardkodede brukervendte tekster, eller alvorlige lesbarhetsproblemer — **alt må være i diffen**.
 - Maksimalt ${MAX_INLINE_COMMENTS} kommentarer; bruk **færre** hvis PR-en er ren. Ingen duplikater.
 - All \`body\`-tekst må være på **norsk (bokmål)**.
 - Bruk \`"inlineComments": []\` når ingenting møter terskelen.`;
