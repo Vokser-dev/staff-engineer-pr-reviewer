@@ -103,25 +103,6 @@ interface AzureCommitDiff {
   allChangesIncluded?: boolean;
 }
 
-interface AzureIteration {
-  id: number;
-}
-
-interface AzureIterationChange {
-  changeTrackingId: number;
-  item: { path: string };
-}
-
-interface AzureIterationChanges {
-  changeEntries: AzureIterationChange[];
-}
-
-interface AzureReviewBundle {
-  pr: PullRequestContext;
-  latestIterationId: number;
-  changeTrackingByPath: Map<string, number>;
-}
-
 function stripRef(ref: string): string {
   return ref.replace(/^refs\/heads\//, "");
 }
@@ -214,33 +195,6 @@ function buildFilePatch(
   return hasChanges ? patch : undefined;
 }
 
-async function getIterationContext(
-  repoBase: string,
-  pullRequestId: number,
-  pat: string
-): Promise<{
-  latestIterationId: number;
-  changeTrackingByPath: Map<string, number>;
-}> {
-  const iterations = await azureGet<{ value: AzureIteration[] }>(
-    `${repoBase}/pullRequests/${pullRequestId}/iterations?${API_VERSION}`,
-    pat
-  );
-  const latestIterationId = iterations.value[iterations.value.length - 1].id;
-
-  const changes = await azureGet<AzureIterationChanges>(
-    `${repoBase}/pullRequests/${pullRequestId}/iterations/${latestIterationId}/changes?${API_VERSION}`,
-    pat
-  );
-
-  const changeTrackingByPath = new Map<string, number>();
-  for (const entry of changes.changeEntries) {
-    changeTrackingByPath.set(entry.item.path, entry.changeTrackingId);
-  }
-
-  return { latestIterationId, changeTrackingByPath };
-}
-
 function resolveRepoPath(
   filename: string,
   changedFiles: Set<string>
@@ -256,20 +210,15 @@ function resolveRepoPath(
   return undefined;
 }
 
-async function getReviewBundle(config: AzureConfig): Promise<AzureReviewBundle> {
+async function getPullRequestContext(
+  config: AzureConfig
+): Promise<PullRequestContext> {
   const repoBase = `https://dev.azure.com/${config.organization}/${config.project}/_apis/git/repositories/${config.repositoryId}`;
 
-  const [pr, iteration] = await Promise.all([
-    azureGet<AzurePR>(
-      `${repoBase}/pullRequests/${config.pullRequestId}?${API_VERSION}`,
-      config.personalAccessToken
-    ),
-    getIterationContext(
-      repoBase,
-      config.pullRequestId,
-      config.personalAccessToken
-    ),
-  ]);
+  const pr = await azureGet<AzurePR>(
+    `${repoBase}/pullRequests/${config.pullRequestId}?${API_VERSION}`,
+    config.personalAccessToken
+  );
 
   const sourceCommitId = pr.lastMergeSourceCommit.commitId;
   const targetCommitId = pr.lastMergeTargetCommit.commitId;
@@ -342,19 +291,13 @@ async function getReviewBundle(config: AzureConfig): Promise<AzureReviewBundle> 
     })
   );
 
-  const prContext: PullRequestContext = {
+  return {
     title: pr.title,
     description: pr.description ?? "",
     author: pr.createdBy.displayName,
     baseBranch: stripRef(pr.targetRefName),
     headBranch: stripRef(pr.sourceRefName),
     files,
-  };
-
-  return {
-    pr: prContext,
-    latestIterationId: iteration.latestIterationId,
-    changeTrackingByPath: iteration.changeTrackingByPath,
   };
 }
 
@@ -376,11 +319,9 @@ async function postInlineComment(
   config: AzureConfig,
   filePath: string,
   line: number,
-  body: string,
-  latestIterationId: number,
-  changeTrackingId?: number
+  body: string
 ): Promise<void> {
-  const payload: Record<string, unknown> = {
+  await azurePost(threadsUrl(config), config.personalAccessToken, {
     comments: [{ parentCommentId: 0, content: body, commentType: 1 }],
     status: 1,
     threadContext: {
@@ -390,27 +331,15 @@ async function postInlineComment(
       rightFileStart: { line, offset: 1 },
       rightFileEnd: { line, offset: 1 },
     },
-  };
-
-  if (changeTrackingId != null) {
-    payload.pullRequestThreadContext = {
-      changeTrackingId,
-      iterationContext: {
-        firstComparingIteration: 1,
-        secondComparingIteration: latestIterationId,
-      },
-    };
-  }
-
-  await azurePost(threadsUrl(config), config.personalAccessToken, payload);
+  });
 }
 
 async function postInlineComments(
   config: AzureConfig,
-  bundle: AzureReviewBundle,
+  pr: PullRequestContext,
   comments: ReviewComment[]
 ): Promise<number> {
-  const changedFiles = new Set(bundle.pr.files.map((f) => f.filename));
+  const changedFiles = new Set(pr.files.map((f) => f.filename));
   let posted = 0;
 
   for (const comment of comments) {
@@ -422,18 +351,10 @@ async function postInlineComments(
       continue;
     }
 
-    const changeTrackingId = bundle.changeTrackingByPath.get(filePath);
     const body = formatInlineCommentBody(comment);
 
     try {
-      await postInlineComment(
-        config,
-        filePath,
-        comment.line,
-        body,
-        bundle.latestIterationId,
-        changeTrackingId
-      );
+      await postInlineComment(config, filePath, comment.line, body);
       posted++;
     } catch (err) {
       console.warn(`Failed to post inline comment on ${filePath}:${comment.line}:`, err);
@@ -452,20 +373,20 @@ async function run(): Promise<void> {
 
   const anthropic = new Anthropic({ apiKey: config.anthropicApiKey });
 
-  const bundle = await getReviewBundle(config);
+  const prContext = await getPullRequestContext(config);
 
-  const withPatch = bundle.pr.files.filter((f) => f.patch).length;
+  const withPatch = prContext.files.filter((f) => f.patch).length;
   console.log(
-    `PR has ${bundle.pr.files.length} changed file(s), ${withPatch} with diff content. Sending to Claude...`
+    `PR has ${prContext.files.length} changed file(s), ${withPatch} with diff content. Sending to Claude...`
   );
 
-  const reviewText = await runReview(anthropic, bundle.pr, {
+  const reviewText = await runReview(anthropic, prContext, {
     requestInlineComments: true,
   });
 
   const { markdown, inlineComments } = splitReviewResponse(reviewText);
 
-  const inlinePosted = await postInlineComments(config, bundle, inlineComments);
+  const inlinePosted = await postInlineComments(config, prContext, inlineComments);
   console.log(
     `Posted ${inlinePosted} inline comment(s) (${inlineComments.length} requested).`
   );

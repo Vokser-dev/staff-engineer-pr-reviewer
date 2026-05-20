@@ -110,7 +110,7 @@ After the verdict, append **one** JSON code block and nothing else after it. The
 
 Rules:
 - \`file\`: path as shown in the diff headers (repo-relative, forward slashes, no leading slash).
-- \`line\`: line number in the **post-change (right-side)** file on a **added/changed** line only.
+- \`line\`: line number in the **post-change (right-side)** file on a **added/changed** line only. Derive it from the diff \`@@\` hunk headers (\`+start,count\`); the second number in \`+c,d\` is the 1-based line in the new file.
 - \`severity\`: only \`critical\` or \`major\`.
 - Inline only for: security, correctness bugs, debug logging in production paths, hardcoded user-facing text, or serious readability problems — **all must be in the diff**.
 - Maximum ${MAX_INLINE_COMMENTS} comments; use **fewer** if the PR is clean. No duplicates. No file-level-only comments.
