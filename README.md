@@ -4,13 +4,28 @@ Automated pull request reviews powered by Claude. Posts a structured code review
 
 ## What it reviews
 
-Each review covers correctness, security, design, performance, maintainability, and test coverage — structured as:
+The reviewer acts as a Senior Staff Engineer with 15+ years of fullstack experience. It reads the entire diff before commenting, understands the intent before judging the implementation, and explains *why* something is a problem — not just that it is one.
 
-1. Overall summary
-2. Critical issues (must fix before merge)
-3. Suggestions
-4. Nits
-5. Verdict: APPROVE / REQUEST CHANGES / COMMENT
+**Coverage by layer:**
+
+| Layer | What it catches |
+|---|---|
+| Database / storage | Missing indexes, N+1 queries, unbounded result sets, incorrect transactions |
+| Backend / API | Auth gaps, unsafe deserialization, input validation, incorrect HTTP semantics, race conditions |
+| Business logic | Off-by-one errors, silent failures, incorrect state machines, concurrency issues |
+| Frontend | XSS vectors, unnecessary re-renders, missing loading/error states, accessibility issues |
+| Cross-layer contracts | Type mismatches between client and server, broken cache invalidation, optimistic UI that ignores server rejection |
+| Operability | Missing structured logging, swallowed errors without context |
+| Security | OWASP Top 10 — flagged as Critical |
+
+**Review output:**
+
+1. Summary (2–4 sentences on quality and risk)
+2. Critical Issues — will block merge
+3. Major Issues — significant design or correctness problems
+4. Minor Issues & Suggestions
+5. Nits
+6. Verdict: **APPROVE** · **APPROVE WITH NITS** · **REQUEST CHANGES** · **BLOCK**
 
 ## GitHub Actions
 
