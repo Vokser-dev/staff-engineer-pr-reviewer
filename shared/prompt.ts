@@ -180,6 +180,7 @@ Regler:
 - Bruk \`minor\` kun for konkrete, handlingsorienterte problemer i diffen som ikke blokkerer merge, for eksempel debug-logging, hardkodede brukervendte tekster, manglende enkel fallback eller tydelig forvirrende ny kode.
 - Bruk \`nit\` kun for små forbedringer som øker lesbarhet eller vedlikeholdbarhet uten å påvirke korrekthet eller risiko.
 - \`nit\` skal aldri blokkere merge.
+- \`inlineComments\` skal aldri være \`nit\`.
 - \`overallVerdict\` må være én av:
   - \`approve\`
   - \`comment\`
@@ -268,6 +269,7 @@ function findLastJsonFence(text: string): RegExpMatchArray | undefined {
 
 function parseInlineCommentsPayload(jsonText: string): ReviewComment[] {
 	const parsed = JSON.parse(jsonText) as {
+		overallVerdict?: "approve" | "comment" | "request-changes";
 		inlineComments?: Array<{
 			file?: string;
 			line?: number;
@@ -302,6 +304,7 @@ function parseInlineCommentsPayload(jsonText: string): ReviewComment[] {
 export function splitReviewResponse(text: string): {
 	markdown: string;
 	inlineComments: ReviewComment[];
+	overallVerdict?: "approve" | "comment" | "request-changes";
 } {
 	const trimmed = text.trim();
 	const lastMatch = findLastJsonFence(trimmed);
@@ -311,16 +314,28 @@ export function splitReviewResponse(text: string): {
 
 	let markdown = stripJsonCodeBlocks(markdownBeforeJson);
 	let inlineComments: ReviewComment[] = [];
+	let overallVerdict: "approve" | "comment" | "request-changes" | undefined;
 
 	if (lastMatch) {
 		try {
+			const parsed = JSON.parse(lastMatch[1].trim()) as {
+				overallVerdict?: "approve" | "comment" | "request-changes";
+				inlineComments?: Array<{
+					file?: string;
+					line?: number;
+					severity?: string;
+					body?: string;
+				}>;
+			};
+
+			overallVerdict = parsed.overallVerdict;
 			inlineComments = parseInlineCommentsPayload(lastMatch[1].trim());
 		} catch {
 			inlineComments = [];
 		}
 	}
 
-	return { markdown, inlineComments };
+	return { markdown, inlineComments, overallVerdict };
 }
 
 const SEVERITY_LABELS_NO: Record<ReviewComment["severity"], string> = {
