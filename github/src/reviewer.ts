@@ -228,6 +228,12 @@ async function run(): Promise<void> {
 	const { markdown, inlineComments, overallVerdict } =
 		splitReviewResponse(reviewText);
 
+	if (overallVerdict === undefined) {
+		core.warning(
+			"Could not parse overallVerdict from Claude's response (missing or invalid JSON block). Defaulting review event to COMMENT.",
+		);
+	}
+
 	const linesIndex = buildAddedLinesIndex(prContext.files);
 	const filteredComments = filterInlineComments(inlineComments, linesIndex);
 	const event = verdictToEvent(overallVerdict);

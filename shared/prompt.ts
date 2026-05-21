@@ -316,7 +316,7 @@ function parseInlineCommentsPayload(jsonText: string): {
 		if (!raw.file || !raw.body || typeof raw.line !== "number") continue;
 		if (!Number.isInteger(raw.line) || raw.line < 1) continue;
 
-		const severity = (raw.severity ?? "major").toLowerCase();
+		const severity = (raw.severity ?? "minor").toLowerCase();
 		if (!inlineSeverities.has(severity)) continue;
 
 		inlineComments.push({
