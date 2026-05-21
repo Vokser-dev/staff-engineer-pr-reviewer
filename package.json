@@ -36,12 +36,12 @@
   },
   "lint-staged": {
     "**/*.{ts,js}": [
-      "eslint --fix",
-      "prettier --write",
+      "eslint",
+      "prettier --check",
       "jest --findRelatedTests --passWithNoTests"
     ],
     "**/*.{json,md,yml,yaml}": [
-      "prettier --write"
+      "prettier --check"
     ]
   },
   "devDependencies": {
