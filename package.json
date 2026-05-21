@@ -37,6 +37,8 @@
     ]
   },
   "devDependencies": {
+    "@emnapi/core": "^1.10.0",
+    "@emnapi/runtime": "^1.10.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^20.0.0",
     "eslint": "^9.39.4",
