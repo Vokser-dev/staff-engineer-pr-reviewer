@@ -43,9 +43,9 @@ async function choosePlatform(detected: Platform | null): Promise<Platform> {
     {
       type: "select",
       name: "platform",
-      message: "Which CI platform are you targeting?",
+      message: "Where are you running your CI pipeline?",
       choices: [
-        { title: "GitHub Actions", value: "github" as const },
+        { title: "GitHub", value: "github" as const },
         { title: "Azure DevOps", value: "azure" as const },
       ],
       initial: 0,
