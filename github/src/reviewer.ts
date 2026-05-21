@@ -73,6 +73,7 @@ function extractAddedLines(patch: string | undefined): Set<number> {
 			continue;
 		}
 		if (raw.startsWith("+++") || raw.startsWith("---")) continue;
+		if (raw.startsWith("\\")) continue;
 
 		if (raw.startsWith("+")) {
 			lines.add(newLineNum);
