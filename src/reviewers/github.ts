@@ -1,6 +1,7 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
 import Anthropic from "@anthropic-ai/sdk";
+
 import {
   formatInlineCommentBody,
   PullRequestContext,
@@ -66,12 +67,12 @@ async function getPullRequestData(
  *  lines from the unified diff. */
 function extractAddedLines(patch: string | undefined): Set<number> {
   const lines = new Set<number>();
-  if (!patch) return lines;
+  if (patch == null || patch === "") return lines;
 
   let newLineNum = 0;
   for (const raw of patch.split("\n")) {
     const hunk = raw.match(/^@@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/);
-    if (hunk) {
+    if (hunk != null) {
       newLineNum = parseInt(hunk[1], 10);
       continue;
     }
@@ -107,7 +108,7 @@ function filterInlineComments(
       continue;
     }
     const validLines = index.get(c.filename);
-    if (!validLines) {
+    if (validLines == null) {
       core.warning(`Skipping inline comment: file "${c.filename}" not in PR diff`);
       continue;
     }
@@ -129,7 +130,7 @@ function verdictToEvent(
     case "request-changes":
       return "REQUEST_CHANGES";
     case "comment":
-    default:
+    case undefined:
       return "COMMENT";
   }
 }
@@ -200,7 +201,7 @@ export const run: ReviewerPlugin["run"] = async (): Promise<void> => {
   }
 
   const pullNumber = context.payload.pull_request?.number;
-  if (!pullNumber) {
+  if (pullNumber == null) {
     core.setFailed("Could not determine pull request number.");
     return;
   }

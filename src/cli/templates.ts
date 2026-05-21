@@ -15,7 +15,7 @@ export interface GithubTemplateOptions {
 
 export function renderGithubWorkflow(opts: GithubTemplateOptions): string {
   const branchesList = opts.branches.map((b) => `      - ${b}`).join("\n");
-  const branchesBlock = opts.branches.length ? `\n    branches:\n${branchesList}` : "";
+  const branchesBlock = opts.branches.length > 0 ? `\n    branches:\n${branchesList}` : "";
 
   return `name: PR Review
 

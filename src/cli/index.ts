@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { runInit } from "@/cli/commands/init";
 import { runDoctor } from "@/cli/commands/doctor";
+import { runInit } from "@/cli/commands/init";
 
 /** Git-URL form used in help text. Consumers install via `npx <this>` — the
  *  open GitHub repo is the source of truth, no npm registry involved. */
@@ -40,6 +40,7 @@ version pinning. Roll out changes by pushing to the default branch.
 function printVersion(): void {
   // Resolved at build time via require — keeps it accurate even if the
   // package is renamed/forked.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const pkg = require("../../package.json") as { version: string };
   console.log(pkg.version);
 }
@@ -65,7 +66,7 @@ async function dispatch(argv: string[]): Promise<number> {
       return 0;
 
     case "doctor":
-      await runDoctor(rest);
+      runDoctor(rest);
       return 0;
 
     case "github": {

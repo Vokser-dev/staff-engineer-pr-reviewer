@@ -1,7 +1,9 @@
-import { simpleGit } from "simple-git";
+import * as fs from "fs";
+
 import Anthropic from "@anthropic-ai/sdk";
 import * as dotenv from "dotenv";
-import * as fs from "fs";
+import { simpleGit } from "simple-git";
+
 import { PullRequestContext, PullRequestFile, reviewPullRequest } from "@/lib/index";
 
 // Load environment variables
@@ -21,13 +23,13 @@ dotenv.config({ path: envPath });
 export async function run(args: string[] = process.argv.slice(2)): Promise<void> {
   const git = simpleGit();
   const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
-  if (!anthropicApiKey) {
+  if (anthropicApiKey == null || anthropicApiKey === "") {
     console.error("Error: ANTHROPIC_API_KEY environment variable is not set.");
     console.error("Please set it in your environment or in a .env file.");
     process.exit(1);
   }
 
-  const isUncommitted = !args[0];
+  const isUncommitted = args[0] == null || args[0] === "";
   let commitSha = "";
   let base = "HEAD";
   let author = "Local User";
@@ -43,8 +45,8 @@ export async function run(args: string[] = process.argv.slice(2)): Promise<void>
     try {
       const name = (await git.raw(["config", "user.name"])).trim();
       const email = (await git.raw(["config", "user.email"])).trim();
-      if (name) {
-        author = `${name} ${email ? `<${email}>` : ""}`.trim();
+      if (name !== "") {
+        author = `${name} ${email !== "" ? `<${email}>` : ""}`.trim();
       }
     } catch {
       // Use fallback
@@ -100,7 +102,7 @@ export async function run(args: string[] = process.argv.slice(2)): Promise<void>
 
     const statusOutput = (await git.raw(statusArgs)).trim();
 
-    if (!statusOutput) {
+    if (statusOutput === "") {
       console.log(
         isUncommitted ? "No uncommitted changes found." : "No changed files in this commit.",
       );
@@ -136,10 +138,12 @@ export async function run(args: string[] = process.argv.slice(2)): Promise<void>
           ? ["diff", "--numstat", "HEAD", "--", filename]
           : ["diff", "--numstat", base, commitSha, "--", filename];
         const numstatOutput = (await git.raw(numstatArgs)).trim();
-        if (numstatOutput) {
+        if (numstatOutput !== "") {
           const numParts = numstatOutput.split(/\s+/);
-          additions = parseInt(numParts[0], 10) || 0;
-          deletions = parseInt(numParts[1], 10) || 0;
+          const parsedAdditions = parseInt(numParts[0], 10);
+          const parsedDeletions = parseInt(numParts[1], 10);
+          additions = Number.isNaN(parsedAdditions) ? 0 : parsedAdditions;
+          deletions = Number.isNaN(parsedDeletions) ? 0 : parsedDeletions;
         }
       } catch {
         // Fallback or binary file (which shows '-' in numstat)
@@ -202,7 +206,7 @@ export async function run(args: string[] = process.argv.slice(2)): Promise<void>
     console.log("                   INLINE-KOMMENTARER                   ");
     console.log("========================================================\n");
 
-    if (inlineComments && inlineComments.length > 0) {
+    if (inlineComments != null && inlineComments.length > 0) {
       for (const comment of inlineComments) {
         const severityStr = comment.severity.toUpperCase();
         console.log(`📌 Fil:              ${comment.filename}:${comment.line ?? "N/A"}`);

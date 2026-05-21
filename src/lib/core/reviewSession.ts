@@ -28,7 +28,7 @@ export async function runReviewSession(
 
   await host.publishSummary(markdown);
 
-  if (opts.inline && inlineComments && inlineComments.length > 0) {
+  if (opts.inline && inlineComments != null && inlineComments.length > 0) {
     try {
       await host.publishInline(inlineComments, prContext);
     } catch (err) {

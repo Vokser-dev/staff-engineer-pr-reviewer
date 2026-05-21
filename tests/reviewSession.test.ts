@@ -43,7 +43,7 @@ describe("runReviewSession", () => {
     };
 
     const reviewFn: ReviewFunction = (pr, options) => {
-      calls.push(`reviewFn:requestInlineComments=${!!options?.requestInlineComments}`);
+      calls.push(`reviewFn:requestInlineComments=${options?.requestInlineComments === true}`);
       expect(options?.requestInlineComments).toBe(false);
       return Promise.resolve({ markdown: "Flott PR", inlineComments: [] });
     };
@@ -130,5 +130,28 @@ describe("runReviewSession", () => {
     expect(warnSpy).toHaveBeenCalled();
 
     warnSpy.mockRestore();
+  });
+
+  it("should not crash if inlineComments is undefined", async () => {
+    const host: ReviewHost = {
+      fetchContext() {
+        return Promise.resolve(mockContext);
+      },
+      publishSummary() {
+        return Promise.resolve();
+      },
+      publishInline() {
+        return Promise.resolve(0);
+      },
+    };
+
+    const reviewFn: ReviewFunction = () => {
+      return Promise.resolve({
+        markdown: "Kritisk",
+        inlineComments: undefined as unknown as ReviewComment[],
+      });
+    };
+
+    await expect(runReviewSession(host, reviewFn, { inline: true })).resolves.not.toThrow();
   });
 });

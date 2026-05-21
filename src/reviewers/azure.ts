@@ -1,5 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createTwoFilesPatch } from "diff";
+
+import {
+  stripRef,
+  changeTypeLabel,
+  statsFromPatch,
+  resolveRepoPath,
+} from "@/lib/azure/pathResolver";
 import {
   formatInlineCommentBody,
   PullRequestContext,
@@ -11,12 +18,6 @@ import {
   reviewPullRequest,
   ReviewerPlugin,
 } from "@/lib/index";
-import {
-  stripRef,
-  changeTypeLabel,
-  statsFromPatch,
-  resolveRepoPath,
-} from "@/lib/azure/pathResolver";
 
 const API_VERSION = "api-version=7.1";
 const MAX_FILE_CHARS = 500_000;
@@ -33,7 +34,8 @@ interface AzureConfig {
 function loadConfig(): AzureConfig {
   const required = (name: string): string => {
     const val = process.env[name];
-    if (!val) throw new Error(`Missing required environment variable: ${name}`);
+    if (val == null || val === "")
+      throw new Error(`Missing required environment variable: ${name}`);
     return val;
   };
 
@@ -137,7 +139,7 @@ async function getFileContent(
 
   if (contentType.includes("application/json")) {
     const item = (await response.json()) as AzureGitItem;
-    if (item.isFolder || item.contentMetadata?.isBinary) return undefined;
+    if (item.isFolder === true || item.contentMetadata?.isBinary === true) return undefined;
     if (item.content == null) return undefined;
     content = item.content;
   } else {
@@ -186,7 +188,7 @@ async function getPullRequestContext(config: AzureConfig): Promise<PullRequestCo
   }
 
   const blobChanges = diff.changes.filter(
-    (c) => !c.item.isFolder && c.item.gitObjectType !== "tree",
+    (c) => c.item.isFolder !== true && c.item.gitObjectType !== "tree",
   );
 
   const files: PullRequestFile[] = await Promise.all(
@@ -201,11 +203,12 @@ async function getPullRequestContext(config: AzureConfig): Promise<PullRequestCo
           filename,
           sourceCommitId,
         );
-        const patch = content ? buildFilePatch("/dev/null", filename, "", content) : undefined;
+        const patch =
+          content != null ? buildFilePatch("/dev/null", filename, "", content) : undefined;
         return {
           filename,
           status,
-          additions: content ? content.split("\n").length : 0,
+          additions: content != null ? content.split("\n").length : 0,
           deletions: 0,
           patch,
         };
@@ -218,12 +221,13 @@ async function getPullRequestContext(config: AzureConfig): Promise<PullRequestCo
           filename,
           targetCommitId,
         );
-        const patch = content ? buildFilePatch(filename, "/dev/null", content, "") : undefined;
+        const patch =
+          content != null ? buildFilePatch(filename, "/dev/null", content, "") : undefined;
         return {
           filename,
           status,
           additions: 0,
-          deletions: content ? content.split("\n").length : 0,
+          deletions: content != null ? content.split("\n").length : 0,
           patch,
         };
       }
@@ -232,7 +236,7 @@ async function getPullRequestContext(config: AzureConfig): Promise<PullRequestCo
         getFileContent(
           repoBase,
           config.personalAccessToken,
-          change.originalPath || filename,
+          change.originalPath ?? filename,
           targetCommitId,
         ),
         getFileContent(repoBase, config.personalAccessToken, filename, sourceCommitId),
@@ -243,8 +247,8 @@ async function getPullRequestContext(config: AzureConfig): Promise<PullRequestCo
       let patch: string | undefined;
 
       if (oldContent !== undefined && newContent !== undefined) {
-        patch = buildFilePatch(change.originalPath || filename, filename, oldContent, newContent);
-        if (patch) {
+        patch = buildFilePatch(change.originalPath ?? filename, filename, oldContent, newContent);
+        if (patch != null) {
           ({ additions, deletions } = statsFromPatch(patch));
         }
       }
@@ -319,7 +323,7 @@ async function postInlineComments(
 
   for (const comment of comments) {
     const filePath = resolveRepoPath(comment.filename, changedFiles);
-    if (!filePath || comment.line == null) {
+    if (filePath == null || filePath === "" || comment.line == null) {
       console.warn(`Skipping inline comment: could not resolve file "${comment.filename}"`);
       continue;
     }
