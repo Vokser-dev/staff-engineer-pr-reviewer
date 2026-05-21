@@ -4,14 +4,18 @@ import Anthropic from "@anthropic-ai/sdk";
 import {
   PullRequestContext,
   PullRequestFile,
-  runReview,
-} from "../../shared/prompt";
+  ReviewHost,
+  ReviewFunction,
+  runReviewSession,
+  reviewPullRequest,
+  ReviewerPlugin,
+} from "@/lib/index";
 
 async function getPullRequestContext(
   octokit: ReturnType<typeof github.getOctokit>,
   owner: string,
   repo: string,
-  pullNumber: number
+  pullNumber: number,
 ): Promise<PullRequestContext> {
   const { data: pr } = await octokit.rest.pulls.get({
     owner,
@@ -49,7 +53,7 @@ async function postReviewComment(
   owner: string,
   repo: string,
   pullNumber: number,
-  body: string
+  body: string,
 ): Promise<void> {
   await octokit.rest.issues.createComment({
     owner,
@@ -59,7 +63,7 @@ async function postReviewComment(
   });
 }
 
-async function run(): Promise<void> {
+export const run: ReviewerPlugin["run"] = async (): Promise<void> => {
   const token = core.getInput("github-token", { required: true });
   const anthropicApiKey = core.getInput("anthropic-api-key", {
     required: true,
@@ -85,25 +89,28 @@ async function run(): Promise<void> {
 
   const anthropic = new Anthropic({ apiKey: anthropicApiKey });
 
-  const prContext = await getPullRequestContext(
-    octokit,
-    owner,
-    repo,
-    pullNumber
-  );
+  const host: ReviewHost = {
+    async fetchContext() {
+      return getPullRequestContext(octokit, owner, repo, pullNumber);
+    },
+    async publishSummary(markdown) {
+      await postReviewComment(octokit, owner, repo, pullNumber, markdown);
+      core.setOutput("review", markdown);
+    },
+    publishInline(_comments, _ctx) {
+      return Promise.resolve(0);
+    },
+  };
 
-  core.info(
-    `PR has ${prContext.files.length} changed file(s). Sending to Claude...`
-  );
+  const reviewFn: ReviewFunction = (pr, options) => {
+    return reviewPullRequest(anthropic, pr, { inline: options?.requestInlineComments });
+  };
 
-  const review = await runReview(anthropic, prContext);
+  await runReviewSession(host, reviewFn, { inline: false });
+};
 
-  await postReviewComment(octokit, owner, repo, pullNumber, review);
-
-  core.info("Review posted successfully.");
-  core.setOutput("review", review);
+if (require.main === module) {
+  run().catch((err: Error) => {
+    core.setFailed(err.message);
+  });
 }
-
-run().catch((err: Error) => {
-  core.setFailed(err.message);
-});
