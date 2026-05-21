@@ -1,6 +1,9 @@
 {
   "name": "staff-engineer-pr-reviewer",
   "version": "1.0.0",
+  "engines": {
+    "node": ">=22"
+  },
   "description": "Staff Engineer PR Reviewer — GitHub and Azure DevOps",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
