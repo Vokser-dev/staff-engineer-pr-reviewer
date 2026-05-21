@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 
-import { detectPlatforms, Platform, PLATFORM_OUTPUT_PATHS } from "@/cli/detect";
+import { detectPlatforms, PLATFORM_OUTPUT_PATHS } from "@/cli/detect";
 
 type CheckStatus = "ok" | "warn" | "fail" | "info";
 
@@ -77,7 +77,7 @@ function checkAzureVars(filePath: string): CheckResult {
   }
   const missing: string[] = [];
   for (const v of ["AZURE_DEVOPS_ORG", "AZURE_DEVOPS_PROJECT", "AZURE_DEVOPS_REPO_ID"]) {
-    const re = new RegExp(`${v}:\\s*(<.+>|REPLACE|REPLACE_ME|REPLACE-ME|)$`, "m");
+    const re = new RegExp(`${v}:\\s*(<.+>|REPLACE|REPLACE_ME|REPLACE-ME)$`, "m");
     if (re.test(content)) missing.push(v);
   }
   if (missing.length) {
@@ -135,7 +135,7 @@ function printCheck(result: CheckResult): void {
   }
 }
 
-export async function runDoctor(_args: string[]): Promise<void> {
+export function runDoctor(_args: string[]): void {
   console.log("Staff Engineer PR Reviewer — setup check");
   const cwd = process.cwd();
   console.log(`\nChecking ${cwd}`);
@@ -156,7 +156,7 @@ export async function runDoctor(_args: string[]): Promise<void> {
     });
   }
 
-  for (const platform of detection.platforms as Platform[]) {
+  for (const platform of detection.platforms) {
     const filePath = PLATFORM_OUTPUT_PATHS[platform];
     const checks: CheckResult[] = [];
     checks.push(checkWorkflowFile(filePath, PACKAGE_REF));
