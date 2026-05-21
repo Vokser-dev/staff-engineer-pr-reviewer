@@ -2,9 +2,26 @@
   "name": "staff-engineer-pr-reviewer",
   "version": "1.0.0",
   "description": "Staff Engineer PR Reviewer — GitHub and Azure DevOps",
+  "bin": {
+    "staff-engineer-pr-review": "./bin/cli.js"
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
-    "build:watch": "tsc --watch"
+    "build:watch": "tsc --watch",
+    "prepare": "npm run build",
+    "review:azure": "node bin/cli.js azure",
+    "review:github": "node bin/cli.js github"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/henriksvendsgard/staff-engineer-pr-reviewer.git"
   },
   "dependencies": {
     "@actions/core": "^1.10.1",

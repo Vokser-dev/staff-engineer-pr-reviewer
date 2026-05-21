@@ -5,11 +5,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm install          # install dependencies
-npm run build        # compile TypeScript → dist/
-npm run build:watch  # watch mode
-npx tsc --noEmit     # type-check without emitting
+npm install                    # install + prepare (build)
+npm run build                  # compile TypeScript → dist/
+npm run build:watch            # watch mode
+npx staff-engineer-pr-review azure   # ADO reviewer CLI
+npx staff-engineer-pr-review github  # GitHub reviewer CLI
+npx tsc --noEmit               # type-check only
 ```
+
+**`bin/cli.js`** — `staff-engineer-pr-review <azure|github>` loads `dist/*/src/reviewer.js`. Consumers typically run `npx github:Org/staff-engineer-pr-reviewer#v1.0.0 azure` from ADO pipelines without checking out this repo.
 
 There are no tests and no linter configured.
 
