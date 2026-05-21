@@ -12,6 +12,10 @@ import {
 
 type ReviewEvent = "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
 
+/** Review comment that has been validated to have a concrete line anchor.
+ *  This is what `pulls.createReview` requires for inline comments. */
+type AnchoredReviewComment = ReviewComment & { line: number };
+
 interface PullRequestData {
 	context: PullRequestContext;
 	headSha: string;
@@ -98,8 +102,8 @@ function buildAddedLinesIndex(
 function filterInlineComments(
 	comments: ReviewComment[],
 	index: Map<string, Set<number>>,
-): ReviewComment[] {
-	const kept: ReviewComment[] = [];
+): AnchoredReviewComment[] {
+	const kept: AnchoredReviewComment[] = [];
 	for (const c of comments) {
 		if (c.line == null) {
 			core.warning(
@@ -120,7 +124,7 @@ function filterInlineComments(
 			);
 			continue;
 		}
-		kept.push(c);
+		kept.push({ ...c, line: c.line });
 	}
 	return kept;
 }
@@ -147,16 +151,14 @@ async function postReview(
 	commitId: string,
 	body: string,
 	event: ReviewEvent,
-	inlineComments: ReviewComment[],
+	inlineComments: AnchoredReviewComment[],
 ): Promise<void> {
-	const reviewComments = inlineComments
-		.filter((c) => c.line != null)
-		.map((c) => ({
-			path: c.filename,
-			line: c.line as number,
-			side: "RIGHT" as const,
-			body: formatInlineCommentBody(c),
-		}));
+	const reviewComments = inlineComments.map((c) => ({
+		path: c.filename,
+		line: c.line,
+		side: "RIGHT" as const,
+		body: formatInlineCommentBody(c),
+	}));
 
 	await octokit.rest.pulls.createReview({
 		owner,
