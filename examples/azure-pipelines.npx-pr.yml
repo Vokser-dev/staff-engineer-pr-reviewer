@@ -1,0 +1,42 @@
+#For å trigge på PR må det settes opp build policy i Azure Devops:
+#1. Gå til Repos → Branches
+#2. Finn target-branchen, f.eks. main eller develop
+#3. Velg Branch policies
+#4. Under Build validation, trykk +
+#5. Velg pipelinen
+#6. Sett Trigger til Automatic
+#7. Velg policy:
+#8. Required hvis PR ikke skal kunne merges før build er grønn
+#9. Optional hvis den bare skal kjøre
+#10. Lagre
+
+trigger: none
+variables:
+  - group: staff-engineer-pr-review
+  - name: githubOrg
+    value: henriksvendsgard
+  - name: reviewerVersion
+    value: v1.0.0
+  - name: azureDevOpsOrg
+    value: YourOrg
+jobs:
+  - job: StaffEngineerReview
+    displayName: Staff Engineer PR review (→ develop)
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+      - task: NodeTool@0
+        displayName: Use Node.js 20
+        inputs:
+          versionSpec: "20.x"
+      - bash: |
+          set -euo pipefail
+          npx --yes "github:$(githubOrg)/staff-engineer-pr-reviewer#$(reviewerVersion)" azure
+        displayName: Run AI PR review
+        env:
+          ANTHROPIC_API_KEY: $(ANTHROPIC_API_KEY)
+          AZURE_DEVOPS_PAT: $(AZURE_DEVOPS_PAT)
+          AZURE_DEVOPS_ORG: $(azureDevOpsOrg)
+          AZURE_DEVOPS_PROJECT: $(System.TeamProject)
+          AZURE_DEVOPS_REPO_ID: $(Build.Repository.ID)
+          AZURE_DEVOPS_PR_ID: $(System.PullRequest.PullRequestId)

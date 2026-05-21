@@ -1,0 +1,30 @@
+# GitHub Actions: review PRs using npx from this repo (no checkout of the tool).
+# Copy to .github/workflows/ in the repository you want reviewed.
+#
+# Replace MyGitHubOrg and pin a tag (e.g. v1.0.0) instead of @main for stable reviews.
+
+name: Staff Engineer PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  review:
+    name: AI Code Review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run Staff Engineer review
+        run: npx --yes github:MyGitHubOrg/staff-engineer-pr-reviewer@v1.0.0 github
+        env:
+          INPUT_GITHUB-TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_ANTHROPIC-API-KEY: ${{ secrets.ANTHROPIC_API_KEY }}
