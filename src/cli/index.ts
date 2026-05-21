@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { runInit } from "@/cli/commands/init";
 import { runDoctor } from "@/cli/commands/doctor";
+import { runInit } from "@/cli/commands/init";
 
 /** Git-URL form used in help text. Consumers install via `npx <this>` — the
  *  open GitHub repo is the source of truth, no npm registry involved. */

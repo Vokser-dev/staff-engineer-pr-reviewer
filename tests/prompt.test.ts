@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+
 import {
   buildReviewPrompt,
   formatInlineCommentBody,
@@ -80,6 +81,12 @@ describe("buildReviewPrompt", () => {
 
   it("should handle empty description", () => {
     const contextWithoutDesc = { ...mockContext, description: "" };
+    const prompt = buildReviewPrompt(contextWithoutDesc, { requestInlineComments: false });
+    expect(prompt).toContain("_Ingen beskrivelse gitt._");
+  });
+
+  it("should handle null description", () => {
+    const contextWithoutDesc = { ...mockContext, description: null };
     const prompt = buildReviewPrompt(contextWithoutDesc, { requestInlineComments: false });
     expect(prompt).toContain("_Ingen beskrivelse gitt._");
   });

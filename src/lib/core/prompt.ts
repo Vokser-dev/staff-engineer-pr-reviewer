@@ -14,7 +14,7 @@ export interface PullRequestFile {
 
 export interface PullRequestContext {
   title: string;
-  description: string;
+  description: string | null;
   author: string;
   baseBranch: string;
   headBranch: string;
@@ -245,7 +245,10 @@ export function buildReviewPrompt(
 ): string {
   const filesSummary = pr.files
     .map((f) => {
-      const diffBlock = f.patch ? `\`\`\`diff\n${f.patch}\n\`\`\`` : "_No diff available_";
+      const diffBlock =
+        f.patch != null && f.patch !== ""
+          ? `\`\`\`diff\n${f.patch}\n\`\`\``
+          : "_No diff available_";
       return `### ${f.filename} (${f.status}, +${f.additions}/-${f.deletions})\n\n${diffBlock}`;
     })
     .join("\n\n---\n\n");
@@ -256,7 +259,7 @@ export function buildReviewPrompt(
 **Målgren:** ${pr.baseBranch} ← **Kildegren:** ${pr.headBranch}
 
 **Beskrivelse:**
-${pr.description || "_Ingen beskrivelse gitt._"}
+${(pr.description ?? "") !== "" ? pr.description : "_Ingen beskrivelse gitt._"}
 
 ---
 
@@ -286,7 +289,7 @@ For hvert funn må du forklare:
 Hopp over alt annet.
 
 Skriv hele reviewen på **norsk (bokmål)**.${
-    options?.requestInlineComments ? INLINE_COMMENTS_INSTRUCTION : ""
+    options?.requestInlineComments === true ? INLINE_COMMENTS_INSTRUCTION : ""
   }`;
 }
 
@@ -307,7 +310,11 @@ export function getThinkingParameters(thinkingEnv?: string): {
   temperature?: number;
 } {
   const isThinkingEnabled =
-    thinkingEnv && thinkingEnv !== "false" && thinkingEnv !== "off" && thinkingEnv !== "0";
+    thinkingEnv != null &&
+    thinkingEnv !== "" &&
+    thinkingEnv !== "false" &&
+    thinkingEnv !== "off" &&
+    thinkingEnv !== "0";
 
   if (!isThinkingEnabled) {
     return {};
@@ -333,7 +340,10 @@ export async function runReview(
   const extraParams = getThinkingParameters(process.env.ANTHROPIC_THINKING);
 
   const message = await client.messages.create({
-    model: process.env.ANTHROPIC_MODEL || MODEL,
+    model:
+      process.env.ANTHROPIC_MODEL != null && process.env.ANTHROPIC_MODEL !== ""
+        ? process.env.ANTHROPIC_MODEL
+        : MODEL,
     max_tokens: MAX_TOKENS,
     system: [
       {
@@ -352,7 +362,7 @@ export async function runReview(
   });
 
   const textBlock = message.content.find((b) => b.type === "text");
-  if (!textBlock || textBlock.type !== "text") {
+  if (textBlock == null || textBlock.type !== "text") {
     throw new Error("No text content in response");
   }
   return textBlock.text;

@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
+
 import prompts from "prompts";
 
 import { detectPlatforms, Platform, PLATFORM_OUTPUT_PATHS } from "@/cli/detect";
@@ -30,7 +31,7 @@ function info(s: string): string {
 }
 
 async function choosePlatform(detected: Platform | null): Promise<Platform> {
-  if (detected) {
+  if (detected != null) {
     console.log(check(`Detected ${detected === "github" ? "GitHub" : "Azure DevOps"} project.`));
     return detected;
   }
@@ -156,19 +157,19 @@ async function initAzure(): Promise<void> {
         type: "text",
         name: "org",
         message: "Azure DevOps organization:",
-        validate: (v: string) => (v?.trim() ? true : "Required"),
+        validate: (v: string) => (v?.trim() !== "" ? true : "Required"),
       },
       {
         type: "text",
         name: "project",
         message: "Project name:",
-        validate: (v: string) => (v?.trim() ? true : "Required"),
+        validate: (v: string) => (v?.trim() !== "" ? true : "Required"),
       },
       {
         type: "text",
         name: "repo",
         message: "Repository name or ID:",
-        validate: (v: string) => (v?.trim() ? true : "Required"),
+        validate: (v: string) => (v?.trim() !== "" ? true : "Required"),
       },
     ],
     { onCancel },

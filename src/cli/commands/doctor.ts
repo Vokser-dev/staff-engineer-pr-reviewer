@@ -34,7 +34,7 @@ function readIfExists(filePath: string): string | null {
 
 function checkWorkflowFile(filePath: string, packageName: string): CheckResult {
   const content = readIfExists(filePath);
-  if (!content) {
+  if (content == null) {
     return {
       status: "fail",
       message: `Workflow file missing: ${filePath}`,
@@ -53,7 +53,7 @@ function checkWorkflowFile(filePath: string, packageName: string): CheckResult {
 
 function checkGithubPermissions(filePath: string): CheckResult {
   const content = readIfExists(filePath);
-  if (!content) {
+  if (content == null) {
     return {
       status: "info",
       message: "Skipped permission check (no workflow file).",
@@ -72,7 +72,7 @@ function checkGithubPermissions(filePath: string): CheckResult {
 
 function checkAzureVars(filePath: string): CheckResult {
   const content = readIfExists(filePath);
-  if (!content) {
+  if (content == null) {
     return { status: "info", message: "Skipped variable check (no pipeline file)." };
   }
   const missing: string[] = [];
@@ -80,7 +80,7 @@ function checkAzureVars(filePath: string): CheckResult {
     const re = new RegExp(`${v}:\\s*(<.+>|REPLACE|REPLACE_ME|REPLACE-ME)$`, "m");
     if (re.test(content)) missing.push(v);
   }
-  if (missing.length) {
+  if (missing.length > 0) {
     return {
       status: "warn",
       message: `These pipeline env vars look like placeholders: ${missing.join(", ")}`,
@@ -95,7 +95,7 @@ function checkNoNodeModulesPolicy(): CheckResult {
   // appears to have copied the source instead of using the published package.
   const pkgPath = path.join(process.cwd(), "package.json");
   const pkg = readIfExists(pkgPath);
-  if (!pkg)
+  if (pkg == null)
     return { status: "info", message: "No package.json in this project — OK for CI-only usage." };
 
   try {
@@ -127,7 +127,7 @@ function printSection(title: string): void {
 
 function printCheck(result: CheckResult): void {
   console.log(`  ${STATUS_GLYPH[result.status]} ${result.message}`);
-  if (result.hint) {
+  if (result.hint != null) {
     const lines = result.hint.split("\n");
     for (const line of lines) {
       console.log(`      ${"\u001b[2m"}${line}${"\u001b[0m"}`);

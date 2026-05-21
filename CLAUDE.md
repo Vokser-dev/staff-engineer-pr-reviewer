@@ -14,6 +14,8 @@ npx tsc --noEmit     # type-check without emitting
 
 We use Jest for unit tests, with tests located in the top-level `tests/` directory.
 
+**IMPORTANT**: Any refactoring or new code should be followed by linting and testing. Any error or warning should be fixed.
+
 The codebase is structured as follows:
 
 **`src/lib/`** — shared business logic and platform-specific helpers.
