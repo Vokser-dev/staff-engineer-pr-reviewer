@@ -181,7 +181,10 @@ Etter konklusjonen, legg til **én** JSON-kodeblokk og ingenting etter den. Blok
 
 Regler:
 - \`file\`: sti slik den vises i diff-headerene (repo-relativ, skråstrek fremover, ingen ledende skråstrek).
-- \`line\`: linjenummer i filen **etter endring** på en **lagt til eller endret** linje. Avled dette fra diffens \`@@\`-hunk-headere (\`+start,count\`).
+- \`line\`: linjenummer i filen **etter endring**, og det må peke på en linje som faktisk er **lagt til** (\`+\`) i diffen. Slik teller du:
+  - Start fra hunk-headeren \`@@ -a,b +c,d @@\`. Det første linjenummeret i den nye filen er \`c\`.
+  - Gå gjennom hunken linje for linje. Inkrementer telleren for hver \`+\`-linje og hver kontekstlinje (linje uten prefiks). **Hopp over** \`-\`-linjer (de finnes ikke i den nye filen) og metadata-linjer som \`\\ No newline at end of file\`.
+  - \`line\` må peke på en \`+\`-linje. Ikke anker kommentarer på kontekstlinjer eller \`-\`-linjer — verktøyet vil forkaste dem.
 - \`severity\`: kun \`critical\`, \`major\`, \`minor\` eller \`nit\`.
 - Bruk \`critical\` kun for blokkerende sikkerhet, datatap eller sikker produksjonsfeil.
 - Bruk \`major\` for konkrete korrekthetsproblemer som bør fikses før eller rett etter merge.
@@ -196,6 +199,11 @@ Regler:
   - \`approve\` brukes for GODKJENN
   - \`comment\` brukes for GODKJENN MED SMÅTING
   - \`request-changes\` brukes for BE OM ENDRINGER eller BLOKKER
+- \`overallVerdict\` må være konsistent med alvorlighetsgradene i \`inlineComments\`:
+  - Hvis **noen** inline-kommentar har \`severity: "critical"\` eller \`"major"\` → \`overallVerdict\` **må** være \`"request-changes"\`.
+  - Hvis alle inline-kommentarer er \`"minor"\` eller \`"nit"\` (eller listen er tom) → \`overallVerdict\` skal være \`"approve"\` eller \`"comment"\`, aldri \`"request-changes"\`.
+  - \`nit\` alene skal aldri trigge \`"request-changes"\`.
+  - Hvis du er i tvil: velg den mildeste verdict-en som er konsistent med de funnene du faktisk har inkludert.
 - Ikke bruk \`inlineComments\` for rene preferanser, stil, hypotetiske problemer eller generelle forbedringsforslag.
 - Lag \`inlineComments\` bare når kommentaren peker på et konkret problem på akkurat denne linjen.
 - Kommentaren skal forklare hva som er galt og foreslå en konkret fiks.
