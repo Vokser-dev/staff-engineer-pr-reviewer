@@ -21,6 +21,7 @@
     "lint:fix": "eslint src tests --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
     "review:commit": "tsx src/reviewers/local.ts",
     "prepare": "husky && npm run build"
   },
@@ -35,6 +36,7 @@
   },
   "lint-staged": {
     "**/*.{ts,js}": [
+      "eslint --fix",
       "prettier --write",
       "jest --findRelatedTests --passWithNoTests"
     ],

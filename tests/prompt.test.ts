@@ -1,3 +1,4 @@
+import Anthropic from "@anthropic-ai/sdk";
 import {
   buildReviewPrompt,
   formatInlineCommentBody,
@@ -343,7 +344,11 @@ describe("getThinkingParameters", () => {
 });
 
 describe("runReview", () => {
-  let mockClient: any;
+  let mockClient: {
+    messages: {
+      create: jest.Mock<Promise<unknown>, [Anthropic.MessageCreateParamsNonStreaming]>;
+    };
+  };
   let mockContext: PullRequestContext;
   const originalEnv = process.env;
 
@@ -360,9 +365,11 @@ describe("runReview", () => {
     };
     mockClient = {
       messages: {
-        create: jest.fn().mockResolvedValue({
-          content: [{ type: "text", text: "En kjempefin PR!" }],
-        }),
+        create: jest
+          .fn<Promise<unknown>, [Anthropic.MessageCreateParamsNonStreaming]>()
+          .mockResolvedValue({
+            content: [{ type: "text", text: "En kjempefin PR!" }],
+          }),
       },
     };
   });
@@ -372,13 +379,14 @@ describe("runReview", () => {
   });
 
   it("should default to standard cache control on system prompt and no thinking/temperature parameters", async () => {
-    await runReview(mockClient, mockContext);
+    await runReview(mockClient as unknown as Anthropic, mockContext);
 
     expect(mockClient.messages.create).toHaveBeenCalledWith(
       expect.objectContaining({
         system: [
           {
             type: "text",
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             text: expect.any(String),
             cache_control: { type: "ephemeral" },
           },
@@ -392,7 +400,7 @@ describe("runReview", () => {
 
   it("should configure default thinking (budget 2048) and temperature 1.0 when ANTHROPIC_THINKING is enabled (truthy)", async () => {
     process.env.ANTHROPIC_THINKING = "true";
-    await runReview(mockClient, mockContext);
+    await runReview(mockClient as unknown as Anthropic, mockContext);
 
     const args = mockClient.messages.create.mock.calls[0][0];
     expect(args.thinking).toEqual({
@@ -404,7 +412,7 @@ describe("runReview", () => {
 
   it("should configure custom thinking budget when ANTHROPIC_THINKING is set to a valid numeric budget", async () => {
     process.env.ANTHROPIC_THINKING = "4096";
-    await runReview(mockClient, mockContext);
+    await runReview(mockClient as unknown as Anthropic, mockContext);
 
     const args = mockClient.messages.create.mock.calls[0][0];
     expect(args.thinking).toEqual({
@@ -416,7 +424,7 @@ describe("runReview", () => {
 
   it("should fallback to 2048 if ANTHROPIC_THINKING is set to an invalid budget below 1024", async () => {
     process.env.ANTHROPIC_THINKING = "500";
-    await runReview(mockClient, mockContext);
+    await runReview(mockClient as unknown as Anthropic, mockContext);
 
     const args = mockClient.messages.create.mock.calls[0][0];
     expect(args.thinking).toEqual({
@@ -428,19 +436,19 @@ describe("runReview", () => {
 
   it("should not enable thinking if ANTHROPIC_THINKING is set to false, off or 0", async () => {
     process.env.ANTHROPIC_THINKING = "false";
-    await runReview(mockClient, mockContext);
+    await runReview(mockClient as unknown as Anthropic, mockContext);
     let args = mockClient.messages.create.mock.calls[0][0];
     expect(args.thinking).toBeUndefined();
     expect(args.temperature).toBeUndefined();
 
     process.env.ANTHROPIC_THINKING = "off";
-    await runReview(mockClient, mockContext);
+    await runReview(mockClient as unknown as Anthropic, mockContext);
     args = mockClient.messages.create.mock.calls[1][0];
     expect(args.thinking).toBeUndefined();
     expect(args.temperature).toBeUndefined();
 
     process.env.ANTHROPIC_THINKING = "0";
-    await runReview(mockClient, mockContext);
+    await runReview(mockClient as unknown as Anthropic, mockContext);
     args = mockClient.messages.create.mock.calls[2][0];
     expect(args.thinking).toBeUndefined();
     expect(args.temperature).toBeUndefined();

@@ -8,10 +8,6 @@ import { renderAzurePipeline, renderGithubWorkflow } from "@/cli/templates";
 const DEFAULT_BRANCHES = ["main"];
 const DEFAULT_NODE_VERSION = "22";
 
-interface PromptCancelledError extends Error {
-  cancelled: true;
-}
-
 function onCancel(): void {
   console.log("\nAborted.");
   process.exit(130);
@@ -39,7 +35,7 @@ async function choosePlatform(detected: Platform | null): Promise<Platform> {
     return detected;
   }
 
-  const { platform } = await prompts(
+  const { platform } = (await prompts(
     {
       type: "select",
       name: "platform",
@@ -51,12 +47,12 @@ async function choosePlatform(detected: Platform | null): Promise<Platform> {
       initial: 0,
     },
     { onCancel },
-  );
+  )) as { platform: Platform };
   return platform;
 }
 
 async function chooseBranches(): Promise<string[]> {
-  const { branches } = await prompts(
+  const { branches } = (await prompts(
     {
       type: "text",
       name: "branches",
@@ -64,7 +60,7 @@ async function chooseBranches(): Promise<string[]> {
       initial: DEFAULT_BRANCHES.join(","),
     },
     { onCancel },
-  );
+  )) as { branches: string };
   return String(branches ?? "")
     .split(",")
     .map((b) => b.trim())
@@ -76,7 +72,7 @@ async function confirmOverwrite(
 ): Promise<{ overwrite: boolean; altPath?: string }> {
   if (!fs.existsSync(filePath)) return { overwrite: true };
 
-  const { action } = await prompts(
+  const { action } = (await prompts(
     {
       type: "select",
       name: "action",
@@ -89,7 +85,7 @@ async function confirmOverwrite(
       initial: 1,
     },
     { onCancel },
-  );
+  )) as { action: "overwrite" | "alt" | "cancel" };
 
   if (action === "cancel") {
     console.log("\nAborted.");
@@ -109,7 +105,7 @@ async function confirmOverwrite(
 
 async function initGithub(): Promise<void> {
   const branches = await chooseBranches();
-  const { nodeVersion } = await prompts(
+  const { nodeVersion } = (await prompts(
     {
       type: "text",
       name: "nodeVersion",
@@ -117,7 +113,7 @@ async function initGithub(): Promise<void> {
       initial: DEFAULT_NODE_VERSION,
     },
     { onCancel },
-  );
+  )) as { nodeVersion: string };
   const content = renderGithubWorkflow({
     branches,
     nodeVersion: String(nodeVersion ?? DEFAULT_NODE_VERSION),
@@ -154,7 +150,7 @@ async function initGithub(): Promise<void> {
 }
 
 async function initAzure(): Promise<void> {
-  const baseAnswers = await prompts(
+  const baseAnswers = (await prompts(
     [
       {
         type: "text",
@@ -176,10 +172,10 @@ async function initAzure(): Promise<void> {
       },
     ],
     { onCancel },
-  );
+  )) as { org: string; project: string; repo: string };
 
   const branches = await chooseBranches();
-  const { nodeVersion } = await prompts(
+  const { nodeVersion } = (await prompts(
     {
       type: "text",
       name: "nodeVersion",
@@ -187,7 +183,7 @@ async function initAzure(): Promise<void> {
       initial: DEFAULT_NODE_VERSION,
     },
     { onCancel },
-  );
+  )) as { nodeVersion: string };
 
   const content = renderAzurePipeline({
     org: String(baseAnswers.org).trim(),
