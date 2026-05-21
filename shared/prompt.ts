@@ -159,6 +159,7 @@ Etter konklusjonen, legg til **én** JSON-kodeblokk og ingenting etter den. Blok
 
 \`\`\`json
 {
+  "overallVerdict": "approve",
   "inlineComments": [
     {
       "file": "path/relative/to/repo-root.ts",
@@ -179,6 +180,14 @@ Regler:
 - Bruk \`minor\` kun for konkrete, handlingsorienterte problemer i diffen som ikke blokkerer merge, for eksempel debug-logging, hardkodede brukervendte tekster, manglende enkel fallback eller tydelig forvirrende ny kode.
 - Bruk \`nit\` kun for små forbedringer som øker lesbarhet eller vedlikeholdbarhet uten å påvirke korrekthet eller risiko.
 - \`nit\` skal aldri blokkere merge.
+- \`overallVerdict\` må være én av:
+  - \`approve\`
+  - \`comment\`
+  - \`request-changes\`
+- Mapping:
+  - \`approve\` brukes for GODKJENN
+  - \`comment\` brukes for GODKJENN MED SMÅTING
+  - \`request-changes\` brukes for BE OM ENDRINGER eller BLOKKER
 - Ikke bruk \`inlineComments\` for rene preferanser, stil, hypotetiske problemer eller generelle forbedringsforslag.
 - Lag \`inlineComments\` bare når kommentaren peker på et konkret problem på akkurat denne linjen.
 - Kommentaren skal forklare hva som er galt og foreslå en konkret fiks.
