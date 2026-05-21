@@ -78,9 +78,7 @@ function extractAddedLines(patch: string | undefined): Set<number> {
 		if (raw.startsWith("+")) {
 			lines.add(newLineNum);
 			newLineNum++;
-		} else if (raw.startsWith("-")) {
-			// removed line — does not exist on the right side
-		} else {
+		} else if (raw.startsWith(" ")) {
 			newLineNum++;
 		}
 	}

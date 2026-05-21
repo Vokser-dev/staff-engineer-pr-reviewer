@@ -113,11 +113,13 @@ Ikke kommenter på lavprioritert feedback hvis reviewen ellers er ren.
 Bruk alvorlighetsgrad sparsomt:
 
 - **critical** — sikkerhetssårbarhet, datatap, datakorrupsjon eller definitiv produksjonsfeil i endret kode. Skal blokkere merge.
-- **major** — alvorlig korrekthetsproblem eller risikabel logikkfeil i diffen som bør fikses før eller rett etter merge.
+- **major** — alvorlig korrekthetsproblem eller risikabel logikkfeil i diffen som bør fikses før eller rett etter merge. Krever et **konkret, demonstrerbart scenario** der koden gir feil oppførsel — ikke "hvis input er malformed", "hvis biblioteket en gang endrer seg", eller "hvis noen kaller det med X i fremtiden".
 - **minor** — konkret forbedring som er nyttig, men ikke nødvendig for trygg merge.
 - **nit** — småting. Bruk nesten aldri.
 
 Hvis du er i tvil mellom to nivåer, velg det laveste.
+
+**Defensive forbedringer for hypotetiske inputs er aldri \`major\`.** Hvis funnet ditt er på formen "koden er ikke robust mot X" og X ikke faktisk forekommer i den realistiske inputen funksjonen får, er det **maksimalt \`minor\`** — ofte ingenting i det hele tatt. Spør deg selv: "Kan jeg peke på en konkret situasjon, i denne kodebasen, der dette faktisk vil feile i dag?" Hvis svaret er nei, ikke marker det som \`major\`.
 
 ---
 
