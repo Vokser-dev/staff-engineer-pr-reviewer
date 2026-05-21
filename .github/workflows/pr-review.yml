@@ -32,7 +32,7 @@ jobs:
       - run: npm test
 
       - name: Run Staff Engineer review
-        run: node -r tsconfig-paths/register dist/reviewers/github.js
+        run: node dist/reviewers/github.js
         env:
           INPUT_GITHUB-TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_ANTHROPIC-API-KEY: ${{ secrets.ANTHROPIC_API_KEY }}

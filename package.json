@@ -24,8 +24,7 @@
     "@anthropic-ai/sdk": "^0.30.0",
     "diff": "^9.0.0",
     "dotenv": "^17.4.2",
-    "simple-git": "^3.36.0",
-    "tsconfig-paths": "^4.2.0"
+    "simple-git": "^3.36.0"
   },
   "lint-staged": {
     "**/*.{ts,js}": [
@@ -51,6 +50,7 @@
     "prettier": "^3.8.3",
     "ts-jest": "^29.4.10",
     "tsc-alias": "^1.8.17",
+    "tsconfig-paths": "^4.2.0",
     "tsx": "^4.22.3",
     "typescript": "^5.4.0",
     "typescript-eslint": "^8.59.4"
