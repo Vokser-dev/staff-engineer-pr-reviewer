@@ -2,5 +2,4 @@ node_modules/
 dist/
 .env.local
 firebase-debug.log
-.antigravitycli/
-coverage
+package-lock.json

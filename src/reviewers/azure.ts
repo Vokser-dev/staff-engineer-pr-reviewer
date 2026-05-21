@@ -5,9 +5,18 @@ import {
   PullRequestContext,
   PullRequestFile,
   ReviewComment,
-  runReview,
-  splitReviewResponse,
-} from "../../shared/prompt";
+  ReviewHost,
+  ReviewFunction,
+  runReviewSession,
+  reviewPullRequest,
+  ReviewerPlugin,
+} from "@/lib/index";
+import {
+  stripRef,
+  changeTypeLabel,
+  statsFromPatch,
+  resolveRepoPath,
+} from "@/lib/azure/pathResolver";
 
 const API_VERSION = "api-version=7.1";
 const MAX_FILE_CHARS = 500_000;
@@ -55,11 +64,7 @@ async function azureGet<T>(url: string, pat: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-async function azurePost(
-  url: string,
-  pat: string,
-  body: unknown
-): Promise<void> {
+async function azurePost(url: string, pat: string, body: unknown): Promise<void> {
   const response = await fetch(url, {
     method: "POST",
     headers: {
@@ -70,9 +75,7 @@ async function azurePost(
   });
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(
-      `Azure DevOps POST error ${response.status}: ${url}\n${text}`
-    );
+    throw new Error(`Azure DevOps POST error ${response.status}: ${url}\n${text}`);
   }
 }
 
@@ -103,38 +106,11 @@ interface AzureCommitDiff {
   allChangesIncluded?: boolean;
 }
 
-function stripRef(ref: string): string {
-  return ref.replace(/^refs\/heads\//, "");
-}
-
-function changeTypeLabel(changeType: string): string {
-  const ct = changeType.toLowerCase();
-  if (ct === "delete") return "removed";
-  if (ct === "rename" || ct === "sourcerename" || ct === "targetrename") {
-    return "renamed";
-  }
-  if (ct === "add") return "added";
-  return "modified";
-}
-
-function statsFromPatch(patch: string): { additions: number; deletions: number } {
-  let additions = 0;
-  let deletions = 0;
-  for (const line of patch.split("\n")) {
-    if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("@@")) {
-      continue;
-    }
-    if (line.startsWith("+")) additions++;
-    else if (line.startsWith("-")) deletions++;
-  }
-  return { additions, deletions };
-}
-
 async function getFileContent(
   repoBase: string,
   pat: string,
   path: string,
-  commitId: string
+  commitId: string,
 ): Promise<string | undefined> {
   const params = new URLSearchParams({
     path,
@@ -144,7 +120,7 @@ async function getFileContent(
     "api-version": "7.1",
   });
 
-  const response = await fetch(`${repoBase}/items?${params}`, {
+  const response = await fetch(`${repoBase}/items?${params.toString()}`, {
     headers: {
       Authorization: authHeader(pat),
       Accept: "application/json",
@@ -180,44 +156,21 @@ function buildFilePatch(
   oldPath: string,
   newPath: string,
   oldContent: string,
-  newContent: string
+  newContent: string,
 ): string | undefined {
-  const patch = createTwoFilesPatch(
-    oldPath,
-    newPath,
-    oldContent,
-    newContent,
-    "",
-    "",
-    { context: 3 }
-  );
+  const patch = createTwoFilesPatch(oldPath, newPath, oldContent, newContent, "", "", {
+    context: 3,
+  });
   const hasChanges = patch.split("\n").some((l) => l.startsWith("+") || l.startsWith("-"));
   return hasChanges ? patch : undefined;
 }
 
-function resolveRepoPath(
-  filename: string,
-  changedFiles: Set<string>
-): string | undefined {
-  const normalized = filename.replace(/^\//, "");
-  if (changedFiles.has(normalized)) return `/${normalized}`;
-
-  for (const f of changedFiles) {
-    if (f === normalized || f.endsWith(`/${normalized}`)) {
-      return `/${f}`;
-    }
-  }
-  return undefined;
-}
-
-async function getPullRequestContext(
-  config: AzureConfig
-): Promise<PullRequestContext> {
+async function getPullRequestContext(config: AzureConfig): Promise<PullRequestContext> {
   const repoBase = `https://dev.azure.com/${config.organization}/${config.project}/_apis/git/repositories/${config.repositoryId}`;
 
   const pr = await azureGet<AzurePR>(
     `${repoBase}/pullRequests/${config.pullRequestId}?${API_VERSION}`,
-    config.personalAccessToken
+    config.personalAccessToken,
   );
 
   const sourceCommitId = pr.lastMergeSourceCommit.commitId;
@@ -225,70 +178,85 @@ async function getPullRequestContext(
 
   const diff = await azureGet<AzureCommitDiff>(
     `${repoBase}/diffs/commits?baseVersion=${targetCommitId}&baseVersionType=commit&targetVersion=${sourceCommitId}&targetVersionType=commit&$top=2000&${API_VERSION}`,
-    config.personalAccessToken
+    config.personalAccessToken,
   );
 
   if (diff.allChangesIncluded === false) {
-    console.warn(
-      "PR has more than 2000 changed paths; only the first page was reviewed."
-    );
+    console.warn("PR has more than 2000 changed paths; only the first page was reviewed.");
   }
 
   const blobChanges = diff.changes.filter(
-    (c) => !c.item.isFolder && c.item.gitObjectType !== "tree"
+    (c) => !c.item.isFolder && c.item.gitObjectType !== "tree",
   );
 
   const files: PullRequestFile[] = await Promise.all(
     blobChanges.map(async (change) => {
-      const newPath = change.item.path;
-      const oldPath = change.originalPath ?? newPath;
-      const displayPath = newPath.replace(/^\//, "");
       const status = changeTypeLabel(change.changeType);
+      const filename = change.item.path;
 
-      let patch: string | undefined;
-      let additions = 0;
-      let deletions = 0;
-
-      try {
-        const ct = change.changeType.toLowerCase();
-        const oldRaw =
-          ct === "add"
-            ? ""
-            : await getFileContent(
-                repoBase,
-                config.personalAccessToken,
-                oldPath,
-                targetCommitId
-              );
-        const newRaw =
-          ct === "delete"
-            ? ""
-            : await getFileContent(
-                repoBase,
-                config.personalAccessToken,
-                newPath,
-                sourceCommitId
-              );
-
-        if (oldRaw === undefined && newRaw === undefined) {
-          console.warn(`Diff skipped for ${newPath}: binary or unreadable`);
-        } else {
-          patch = buildFilePatch(
-            oldPath,
-            newPath,
-            oldRaw ?? "",
-            newRaw ?? ""
-          );
-          if (patch) {
-            ({ additions, deletions } = statsFromPatch(patch));
-          }
-        }
-      } catch (err) {
-        console.warn(`Diff failed for ${newPath}:`, err);
+      if (status === "added") {
+        const content = await getFileContent(
+          repoBase,
+          config.personalAccessToken,
+          filename,
+          sourceCommitId,
+        );
+        const patch = content ? buildFilePatch("/dev/null", filename, "", content) : undefined;
+        return {
+          filename,
+          status,
+          additions: content ? content.split("\n").length : 0,
+          deletions: 0,
+          patch,
+        };
       }
 
-      return { filename: displayPath, status, additions, deletions, patch };
-    })
+      if (status === "removed") {
+        const content = await getFileContent(
+          repoBase,
+          config.personalAccessToken,
+          filename,
+          targetCommitId,
+        );
+        const patch = content ? buildFilePatch(filename, "/dev/null", content, "") : undefined;
+        return {
+          filename,
+          status,
+          additions: 0,
+          deletions: content ? content.split("\n").length : 0,
+          patch,
+        };
+      }
+
+      const [oldContent, newContent] = await Promise.all([
+        getFileContent(
+          repoBase,
+          config.personalAccessToken,
+          change.originalPath || filename,
+          targetCommitId,
+        ),
+        getFileContent(repoBase, config.personalAccessToken, filename, sourceCommitId),
+      ]);
+
+      let additions = 0;
+      let deletions = 0;
+      let patch: string | undefined;
+
+      if (oldContent !== undefined && newContent !== undefined) {
+        patch = buildFilePatch(change.originalPath || filename, filename, oldContent, newContent);
+        if (patch) {
+          ({ additions, deletions } = statsFromPatch(patch));
+        }
+      }
+
+      return {
+        filename,
+        status,
+        additions,
+        deletions,
+        patch,
+      };
+    }),
   );
 
   return {
@@ -301,16 +269,16 @@ async function getPullRequestContext(
   };
 }
 
-function threadsUrl(config: AzureConfig): string {
-  return `https://dev.azure.com/${config.organization}/${config.project}/_apis/git/repositories/${config.repositoryId}/pullRequests/${config.pullRequestId}/threads?api-version=7.1`;
-}
-
-async function postReviewSummary(
-  config: AzureConfig,
-  body: string
-): Promise<void> {
-  await azurePost(threadsUrl(config), config.personalAccessToken, {
-    comments: [{ parentCommentId: 0, content: body, commentType: 1 }],
+async function postReviewSummary(config: AzureConfig, markdown: string): Promise<void> {
+  const url = `https://dev.azure.com/${config.organization}/${config.project}/_apis/git/repositories/${config.repositoryId}/pullRequests/${config.pullRequestId}/threads?${API_VERSION}`;
+  await azurePost(url, config.personalAccessToken, {
+    comments: [
+      {
+        parentCommentId: 0,
+        content: markdown,
+        commentType: 1,
+      },
+    ],
     status: 1,
   });
 }
@@ -319,10 +287,17 @@ async function postInlineComment(
   config: AzureConfig,
   filePath: string,
   line: number,
-  body: string
+  body: string,
 ): Promise<void> {
-  await azurePost(threadsUrl(config), config.personalAccessToken, {
-    comments: [{ parentCommentId: 0, content: body, commentType: 1 }],
+  const url = `https://dev.azure.com/${config.organization}/${config.project}/_apis/git/repositories/${config.repositoryId}/pullRequests/${config.pullRequestId}/threads?${API_VERSION}`;
+  await azurePost(url, config.personalAccessToken, {
+    comments: [
+      {
+        parentCommentId: 0,
+        content: body,
+        commentType: 1,
+      },
+    ],
     status: 1,
     threadContext: {
       filePath,
@@ -337,7 +312,7 @@ async function postInlineComment(
 async function postInlineComments(
   config: AzureConfig,
   pr: PullRequestContext,
-  comments: ReviewComment[]
+  comments: ReviewComment[],
 ): Promise<number> {
   const changedFiles = new Set(pr.files.map((f) => f.filename));
   let posted = 0;
@@ -345,9 +320,7 @@ async function postInlineComments(
   for (const comment of comments) {
     const filePath = resolveRepoPath(comment.filename, changedFiles);
     if (!filePath || comment.line == null) {
-      console.warn(
-        `Skipping inline comment: could not resolve file "${comment.filename}"`
-      );
+      console.warn(`Skipping inline comment: could not resolve file "${comment.filename}"`);
       continue;
     }
 
@@ -364,39 +337,39 @@ async function postInlineComments(
   return posted;
 }
 
-async function run(): Promise<void> {
+export const run: ReviewerPlugin["run"] = async (): Promise<void> => {
   const config = loadConfig();
 
   console.log(
-    `Reviewing Azure DevOps PR #${config.pullRequestId} in ${config.organization}/${config.project}`
+    `Reviewing Azure DevOps PR #${config.pullRequestId} in ${config.organization}/${config.project}`,
   );
 
   const anthropic = new Anthropic({ apiKey: config.anthropicApiKey });
 
-  const prContext = await getPullRequestContext(config);
+  const host: ReviewHost = {
+    async fetchContext() {
+      return getPullRequestContext(config);
+    },
+    async publishSummary(markdown) {
+      await postReviewSummary(config, markdown);
+    },
+    async publishInline(comments, ctx) {
+      return postInlineComments(config, ctx, comments);
+    },
+  };
 
-  const withPatch = prContext.files.filter((f) => f.patch).length;
-  console.log(
-    `PR has ${prContext.files.length} changed file(s), ${withPatch} with diff content. Sending to Claude...`
-  );
+  const reviewFn: ReviewFunction = (pr, options) => {
+    return reviewPullRequest(anthropic, pr, { inline: options?.requestInlineComments });
+  };
 
-  const reviewText = await runReview(anthropic, prContext, {
-    requestInlineComments: true,
-  });
-
-  const { markdown, inlineComments } = splitReviewResponse(reviewText);
-
-  const inlinePosted = await postInlineComments(config, prContext, inlineComments);
-  console.log(
-    `Posted ${inlinePosted} inline comment(s) (${inlineComments.length} requested).`
-  );
-
-  await postReviewSummary(config, markdown);
+  await runReviewSession(host, reviewFn, { inline: true });
 
   console.log("Review posted successfully.");
-}
+};
 
-run().catch((err: Error) => {
-  console.error("Fatal error:", err.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  run().catch((err: Error) => {
+    console.error("Fatal error:", err.message);
+    process.exit(1);
+  });
+}
