@@ -145,7 +145,9 @@ npx github:henriksvendsgard/staff-engineer-pr-reviewer local
 npx github:henriksvendsgard/staff-engineer-pr-reviewer local HEAD~1
 ```
 
-The local CLI reads `ANTHROPIC_API_KEY` from your environment (or a `.env` / `.env.local` in cwd) and prints the review to stdout — useful for previewing what the bot would say before pushing.
+The local CLI reads `ANTHROPIC_API_KEY` from your environment (or a `.env` / `.env.local` in cwd) and renders the review interactively (summary block + inline comments + final verdict) — useful for previewing what the bot would say before pushing.
+
+All user-facing CLI commands (`init`, `doctor`, `local`) are built on [`citty`](https://github.com/unjs/citty) for argument parsing and [`@clack/prompts`](https://github.com/bombshell-dev/clack) for prompts, spinners, and styled output. The CI reviewers (`github`, `azure`) log through `@actions/core` and plain stdout respectively, since clack's interactive UI isn't appropriate inside a CI runner.
 
 ## Versioning model
 
