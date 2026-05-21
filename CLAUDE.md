@@ -8,28 +8,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm install          # install dependencies
 npm run build        # compile TypeScript → dist/
 npm run build:watch  # watch mode
+npm test             # run Jest tests
 npx tsc --noEmit     # type-check without emitting
 ```
 
-There are no tests and no linter configured.
+We use Jest for unit tests, with tests located in the top-level `tests/` directory.
 
-## Architecture
+The codebase is structured as follows:
 
-The codebase has a shared core and two platform-specific entrypoints:
+**`src/lib/`** — shared business logic and platform-specific helpers.
 
-**`shared/prompt.ts`** — the only place that touches Claude. Owns:
-- `PullRequestContext` / `PullRequestFile` / `ReviewComment` types
-- `STAFF_ENGINEER_SYSTEM_PROMPT` — the review persona and output structure
-- `buildReviewPrompt()` — formats a `PullRequestContext` into a user message
-- `runReview()` — calls the Anthropic API and returns the raw review string
+- **`core/`** — platform-independent review orchestration, prompt construction, and response parsing.
+  - `prompt.ts` — system prompts and prompt formatting.
+  - `reviewPullRequest.ts` — LLM client interface and Anthropic integrations.
+  - `reviewResponse.ts` — JSON extraction, schema validation, and severity filtering.
+  - `reviewSession.ts` — reusable review orchestrator orchestration logic.
+- **`azure/`** — platform-specific helper modules (e.g. `pathResolver.ts`).
+- **`index.ts`** — public entrypoint exposing public types and APIs from `core/`.
 
-Both platform implementations import `runReview` and `PullRequestContext` from here. All prompt or model changes belong in this file.
+**`src/reviewers/github.ts`** — GitHub Actions entrypoint. Reads inputs via `@actions/core.getInput()`. Uses Octokit to fetch PR metadata and diffs.
 
-**`github/src/reviewer.ts`** — GitHub Actions entrypoint. Reads inputs via `@actions/core.getInput()` (which maps to `INPUT_*` env vars). Uses Octokit (`@actions/github`) to fetch PR metadata and file diffs, then posts the review as an issue comment (`issues.createComment`). Exits via `core.setFailed()` on error.
+**`src/reviewers/azure.ts`** — Azure DevOps entrypoint. Reads config from env vars. Uses `fetch` against the ADO REST API.
 
-**`azure/src/reviewer.ts`** — Azure DevOps entrypoint. Reads config from env vars (`AZURE_DEVOPS_ORG`, `AZURE_DEVOPS_PROJECT`, `AZURE_DEVOPS_REPO_ID`, `AZURE_DEVOPS_PR_ID`, `AZURE_DEVOPS_PAT`, `ANTHROPIC_API_KEY`). Uses native `fetch` against the ADO REST API v7.1. Loads the cumulative PR diff via `diffs/commits` (target vs source merge commits), fetches file content at each commit via `items?includeContent=true`, and builds unified patches with the `diff` package. Posts a summary PR thread plus inline line comments via `/threads` (`threadContext` with file path and right-side line only — no `pullRequestThreadContext`, so comments anchor on the latest PR view). Claude returns a trailing JSON block with `inlineComments`; see `splitReviewResponse()` in `shared/prompt.ts`. Exits via `process.exit(1)` on error.
-
-**`tsconfig.json`** — compiles all three source trees (`shared/`, `github/src/`, `azure/src/`) into `dist/` preserving the directory structure. Target: ES2020, module: commonjs.
+**`tsconfig.json`** — compiles the `src/` directory into `dist/` using the `"rootDir": "./src"` option in `tsconfig.build.json`. Resolves `@/*` path aliases.
 
 ## Key constraints
 
