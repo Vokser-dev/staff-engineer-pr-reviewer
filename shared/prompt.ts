@@ -174,11 +174,15 @@ Regler:
 - \`file\`: sti slik den vises i diff-headerene (repo-relativ, skråstrek fremover, ingen ledende skråstrek).
 - \`line\`: linjenummer i filen **etter endring** på en **lagt til eller endret** linje. Avled dette fra diffens \`@@\`-hunk-headere (\`+start,count\`).
 - \`severity\`: kun \`critical\`, \`major\` eller \`minor\`.
-- Lag inline-kommentar bare når kommentaren peker på et konkret problem på akkurat denne linjen.
+- Bruk \`critical\` kun for blokkerende sikkerhet, datatap eller sikker produksjonsfeil.
+- Bruk \`major\` for konkrete korrekthetsproblemer som bør fikses før eller rett etter merge.
+- Bruk \`minor\` kun for konkrete, handlingsorienterte problemer i diffen som ikke blokkerer merge, for eksempel debug-logging, hardkodede brukervendte tekster, manglende enkel fallback eller tydelig forvirrende ny kode.
+- Ikke bruk \`inlineComments\` for rene preferanser, stil, hypotetiske problemer eller generelle forbedringsforslag.
+- Lag \`inlineComments\` bare når kommentaren peker på et konkret problem på akkurat denne linjen.
 - Kommentaren skal forklare hva som er galt og foreslå en konkret fiks.
-- Ikke lag inline-kommentar for generelle observasjoner.
+- Ikke lag \`inlineComments\` for generelle observasjoner.
 - Hvis problemet ikke kan knyttes til en ny eller endret linje, ikke inkluder det.
-- Inline kun for: sikkerhet, korrekthetsfeil, feilsøkingslogging i produksjonskode, hardkodede brukervendte tekster, manglende validering/fallback på risikabel kodevei, eller alvorlige lesbarhetsproblemer.
+- Inline kun for konkrete problemer i diffen: sikkerhet, korrekthetsfeil, feilsøkingslogging i produksjonskode, hardkodede brukervendte tekster, manglende validering/fallback, eller ny kode som er så uklar at den lett kan føre til feil.
 - Alt må være direkte forårsaket av diffen.
 - Maksimalt ${MAX_INLINE_COMMENTS} kommentarer; bruk **færre** hvis PR-en er ren.
 - Ingen duplikater.
