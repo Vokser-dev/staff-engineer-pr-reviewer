@@ -180,7 +180,6 @@ Regler:
 - Bruk \`minor\` kun for konkrete, handlingsorienterte problemer i diffen som ikke blokkerer merge, for eksempel debug-logging, hardkodede brukervendte tekster, manglende enkel fallback eller tydelig forvirrende ny kode.
 - Bruk \`nit\` kun for små forbedringer som øker lesbarhet eller vedlikeholdbarhet uten å påvirke korrekthet eller risiko.
 - \`nit\` skal aldri blokkere merge.
-- \`inlineComments\` skal aldri være \`nit\`.
 - \`overallVerdict\` må være én av:
   - \`approve\`
   - \`comment\`
@@ -267,7 +266,10 @@ function findLastJsonFence(text: string): RegExpMatchArray | undefined {
 	return matches[matches.length - 1];
 }
 
-function parseInlineCommentsPayload(jsonText: string): ReviewComment[] {
+function parseInlineCommentsPayload(jsonText: string): {
+	overallVerdict?: "approve" | "comment" | "request-changes";
+	inlineComments: ReviewComment[];
+} {
 	const parsed = JSON.parse(jsonText) as {
 		overallVerdict?: "approve" | "comment" | "request-changes";
 		inlineComments?: Array<{
@@ -277,6 +279,12 @@ function parseInlineCommentsPayload(jsonText: string): ReviewComment[] {
 			body?: string;
 		}>;
 	};
+
+	const verdicts = new Set(["approve", "comment", "request-changes"]);
+	const overallVerdict =
+		parsed.overallVerdict && verdicts.has(parsed.overallVerdict)
+			? parsed.overallVerdict
+			: undefined;
 
 	const inlineSeverities = new Set(["critical", "major", "minor", "nit"]);
 	const inlineComments: ReviewComment[] = [];
@@ -298,7 +306,7 @@ function parseInlineCommentsPayload(jsonText: string): ReviewComment[] {
 		if (inlineComments.length >= MAX_INLINE_COMMENTS) break;
 	}
 
-	return inlineComments;
+	return { overallVerdict, inlineComments };
 }
 
 export function splitReviewResponse(text: string): {
@@ -312,25 +320,17 @@ export function splitReviewResponse(text: string): {
 	const markdownBeforeJson =
 		lastMatch?.index != null ? trimmed.slice(0, lastMatch.index) : trimmed;
 
-	let markdown = stripJsonCodeBlocks(markdownBeforeJson);
+	const markdown = stripJsonCodeBlocks(markdownBeforeJson);
 	let inlineComments: ReviewComment[] = [];
 	let overallVerdict: "approve" | "comment" | "request-changes" | undefined;
 
 	if (lastMatch) {
 		try {
-			const parsed = JSON.parse(lastMatch[1].trim()) as {
-				overallVerdict?: "approve" | "comment" | "request-changes";
-				inlineComments?: Array<{
-					file?: string;
-					line?: number;
-					severity?: string;
-					body?: string;
-				}>;
-			};
-
-			overallVerdict = parsed.overallVerdict;
-			inlineComments = parseInlineCommentsPayload(lastMatch[1].trim());
+			const payload = parseInlineCommentsPayload(lastMatch[1].trim());
+			overallVerdict = payload.overallVerdict;
+			inlineComments = payload.inlineComments;
 		} catch {
+			overallVerdict = undefined;
 			inlineComments = [];
 		}
 	}
