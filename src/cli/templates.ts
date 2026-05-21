@@ -36,6 +36,11 @@ jobs:
         env:
           INPUT_GITHUB-TOKEN: \${{ secrets.GITHUB_TOKEN }}
           INPUT_ANTHROPIC-API-KEY: \${{ secrets.ANTHROPIC_API_KEY }}
+          # Optional overrides. Configure these as repository variables under
+          # Settings → Secrets and variables → Actions → Variables. Leaving
+          # them unset falls back to the reviewer's built-in defaults.
+          ANTHROPIC_MODEL: \${{ vars.ANTHROPIC_MODEL }}
+          ANTHROPIC_THINKING: \${{ vars.ANTHROPIC_THINKING }}
 `;
 }
 
@@ -59,6 +64,12 @@ pr:
     include:
 ${branchesList}
 
+# Empty defaults so unset overrides resolve to "" instead of the literal
+# string "$(ANTHROPIC_MODEL)". Override per-pipeline or in Pipelines → Library.
+variables:
+  ANTHROPIC_MODEL: ""
+  ANTHROPIC_THINKING: ""
+
 jobs:
   - job: PRReview
     displayName: AI Code Review
@@ -75,6 +86,8 @@ jobs:
         env:
           ANTHROPIC_API_KEY: $(ANTHROPIC_API_KEY)
           AZURE_DEVOPS_PAT: $(AZURE_DEVOPS_PAT)
+          ANTHROPIC_MODEL: $(ANTHROPIC_MODEL)
+          ANTHROPIC_THINKING: $(ANTHROPIC_THINKING)
           AZURE_DEVOPS_ORG: ${opts.org}
           AZURE_DEVOPS_PROJECT: ${opts.project}
           AZURE_DEVOPS_REPO_ID: ${opts.repo}

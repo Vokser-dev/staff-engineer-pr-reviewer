@@ -76,6 +76,8 @@ jobs:
         env:
           INPUT_GITHUB-TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_ANTHROPIC-API-KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
+          ANTHROPIC_THINKING: ${{ vars.ANTHROPIC_THINKING }}
 ```
 
 No `checkout`, no `npm ci`, no build step in the consuming repo. The package and its dependencies are fetched on the fly by `npx`, the reviewer talks directly to the GitHub API for the diff, and `GITHUB_TOKEN` is provided automatically by Actions.
@@ -97,6 +99,10 @@ pr:
     include:
       - main
 
+variables:
+  ANTHROPIC_MODEL: ""
+  ANTHROPIC_THINKING: ""
+
 jobs:
   - job: PRReview
     pool:
@@ -109,6 +115,8 @@ jobs:
         env:
           ANTHROPIC_API_KEY: $(ANTHROPIC_API_KEY)
           AZURE_DEVOPS_PAT: $(AZURE_DEVOPS_PAT)
+          ANTHROPIC_MODEL: $(ANTHROPIC_MODEL)
+          ANTHROPIC_THINKING: $(ANTHROPIC_THINKING)
           AZURE_DEVOPS_ORG: my-org
           AZURE_DEVOPS_PROJECT: my-project
           AZURE_DEVOPS_REPO_ID: my-repo
@@ -160,6 +168,17 @@ npx --yes @henriksvendsgard/staff-engineer-pr-reviewer@1.0.0 github
 | `ANTHROPIC_API_KEY`  | **Required.** Your Anthropic API key.                                                                                                                                                                                                                                                                       |
 | `ANTHROPIC_MODEL`    | The model to use. Defaults to `claude-haiku-4-5-20251001`.                                                                                                                                                                                                                                                  |
 | `ANTHROPIC_THINKING` | Control the thinking budget. Set to `false`, `off`, `0` to disable (default), or a number (e.g. `2048`, `4096`) to enable with a specific token budget (minimum `1024`, defaults to `2048` if non-numeric/invalid). When thinking is enabled, the API request temperature is automatically locked to `1.0`. |
+
+### Overriding model or thinking budget per repo
+
+The generated GitHub workflow forwards `ANTHROPIC_MODEL` and `ANTHROPIC_THINKING` from **repository variables** (Settings → Secrets and variables → Actions → Variables tab). Set them there to override the defaults without touching the workflow file — leave them unset to fall back to the values baked into the reviewer.
+
+The generated Azure pipeline forwards the same two variables from **pipeline variables** (Pipelines → Library, or pipeline-level variables in the UI). The template declares empty top-level defaults so unresolved overrides become an empty string instead of the literal macro `$(ANTHROPIC_MODEL)`, which would otherwise blow up the Anthropic client.
+
+Examples:
+
+- Use Opus on the PRs that touch your security-critical repo: set `ANTHROPIC_MODEL = claude-opus-4-5-20250929` as a repo/pipeline variable.
+- Enable thinking with a 4096-token budget: set `ANTHROPIC_THINKING = 4096`.
 
 To adjust the core prompt rules, check [`src/lib/core/prompt.ts`](src/lib/core/prompt.ts).
 

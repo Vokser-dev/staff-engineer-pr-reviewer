@@ -35,6 +35,15 @@ describe("renderGithubWorkflow", () => {
     expect(out).not.toContain("branches:");
     expect(out).toContain("pull_request:");
   });
+
+  it("exposes ANTHROPIC_MODEL and ANTHROPIC_THINKING via repo vars", () => {
+    const out = renderGithubWorkflow({
+      branches: ["main"],
+      nodeVersion: "22",
+    });
+    expect(out).toContain("ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}");
+    expect(out).toContain("ANTHROPIC_THINKING: ${{ vars.ANTHROPIC_THINKING }}");
+  });
 });
 
 describe("renderAzurePipeline", () => {
@@ -59,5 +68,18 @@ describe("renderAzurePipeline", () => {
     expect(out).toContain("AZURE_DEVOPS_PROJECT: my-project");
     expect(out).toContain("AZURE_DEVOPS_REPO_ID: my-repo");
     expect(out).toContain("AZURE_DEVOPS_PR_ID: $(System.PullRequest.PullRequestId)");
+  });
+
+  it("exposes ANTHROPIC_MODEL and ANTHROPIC_THINKING with empty top-level defaults", () => {
+    const out = renderAzurePipeline({
+      org: "o",
+      project: "p",
+      repo: "r",
+      branches: ["main"],
+      nodeVersion: "22",
+    });
+    expect(out).toContain("ANTHROPIC_MODEL: $(ANTHROPIC_MODEL)");
+    expect(out).toContain("ANTHROPIC_THINKING: $(ANTHROPIC_THINKING)");
+    expect(out).toMatch(/variables:\s*\n\s*ANTHROPIC_MODEL:\s*""\s*\n\s*ANTHROPIC_THINKING:\s*""/);
   });
 });

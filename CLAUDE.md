@@ -36,7 +36,7 @@ The codebase is structured as follows:
 
 **`src/cli/detect.ts`** — best-effort detection of the consumer's CI platform by looking for marker paths (`.github/workflows`, `azure-pipelines.yml`, etc.). Returns both the list of detected platforms and the unique platform if exactly one was found.
 
-**`src/cli/templates.ts`** — pure render functions for the GitHub workflow and Azure pipeline YAML. Both reference the published package by name and use `npx --yes` so the consuming repo never needs to clone this repo. `versionPin` lets `init` pin to a specific version instead of always pulling latest.
+**`src/cli/templates.ts`** — pure render functions for the GitHub workflow and Azure pipeline YAML. Both reference the published package by name and use `npx --yes` so the consuming repo never needs to clone this repo. `versionPin` lets `init` pin to a specific version instead of always pulling latest. Both templates forward `ANTHROPIC_MODEL` and `ANTHROPIC_THINKING` as optional overrides (GitHub: `vars.X`; Azure: `$(X)` paired with empty top-level `variables:` defaults — see the Azure macro caveat below).
 
 **`src/cli/commands/init.ts`** — interactive wizard. Detects the platform, asks for branches, Node version, and (for Azure) org/project/repo, then writes the template to the right path. Handles overwrite confirmation and prints next-steps including which secret(s) to add.
 
@@ -70,3 +70,4 @@ The package is published to npm and consumed by other repos via `npx`. The whole
 - File diffs are fetched in parallel (`Promise.all`); binary or oversized files are skipped with a console warning so they don't abort the whole review.
 - `@actions/core.getInput` reads `process.env['INPUT_GITHUB-TOKEN']` (with a literal hyphen) — this is why the generated workflow sets `INPUT_GITHUB-TOKEN` and `INPUT_ANTHROPIC-API-KEY` rather than using standard env var naming.
 - The CLI lazy-imports platform reviewers (`await import("@/reviewers/github")` etc.) so a consumer running `init` or `doctor` in a non-CI shell never loads `@actions/core` or `@anthropic-ai/sdk`.
+- Azure macro caveat: if you reference `$(FOO)` in a pipeline `env:` block but `FOO` is never declared anywhere, Azure DevOps passes the literal string `"$(FOO)"` to the env var instead of an empty string. The generated Azure template therefore declares `variables: { ANTHROPIC_MODEL: "", ANTHROPIC_THINKING: "" }` at top level so unset overrides resolve to `""` (which the reviewer's `process.env.X || DEFAULT` fallback treats correctly).
