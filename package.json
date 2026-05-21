@@ -6,7 +6,7 @@
   },
   "description": "Staff Engineer PR Reviewer — GitHub and Azure DevOps",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json",
     "build:watch": "tsc -p tsconfig.build.json --watch",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -50,6 +50,7 @@
     "lint-staged": "^17.0.5",
     "prettier": "^3.8.3",
     "ts-jest": "^29.4.10",
+    "tsc-alias": "^1.8.17",
     "tsx": "^4.22.3",
     "typescript": "^5.4.0",
     "typescript-eslint": "^8.59.4"
