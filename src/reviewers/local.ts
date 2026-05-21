@@ -8,7 +8,17 @@ import { PullRequestContext, PullRequestFile, reviewPullRequest } from "@/lib/in
 const envPath = fs.existsSync(".env.local") ? ".env.local" : ".env";
 dotenv.config({ path: envPath });
 
-export async function run(): Promise<void> {
+/**
+ * Run the local reviewer.
+ *
+ * @param args - Positional arguments. `args[0]` is an optional git SHA/ref
+ *   to review. When undefined, reviews uncommitted changes against HEAD.
+ *   Defaults to `process.argv.slice(2)` so that direct execution
+ *   (`node dist/reviewers/local.js <sha>`) keeps working, but the CLI
+ *   dispatcher passes the trailing args explicitly so the subcommand name
+ *   ("local") isn't mistaken for a SHA.
+ */
+export async function run(args: string[] = process.argv.slice(2)): Promise<void> {
   const git = simpleGit();
   const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
   if (!anthropicApiKey) {
@@ -17,11 +27,7 @@ export async function run(): Promise<void> {
     process.exit(1);
   }
 
-  // Parse command line arguments
-  // argv[0] = node
-  // argv[1] = dist/reviewers/local.js
-  // argv[2] = SHA (optional)
-  const isUncommitted = !process.argv[2];
+  const isUncommitted = !args[0];
   let commitSha = "";
   let base = "HEAD";
   let author = "Local User";
@@ -49,7 +55,7 @@ export async function run(): Promise<void> {
       // Use fallback "HEAD"
     }
   } else {
-    const rawSha = process.argv[2];
+    const rawSha = args[0];
     try {
       commitSha = (await git.raw(["rev-parse", "--verify", rawSha])).trim();
     } catch {
