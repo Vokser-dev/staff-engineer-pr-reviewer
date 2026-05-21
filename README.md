@@ -120,7 +120,7 @@ jobs:
 
 The Azure reviewer posts a **summary** PR comment plus **inline** comments on specific lines (critical/major issues). The PAT needs **Pull Request Threads → Read & Write** (same as above).
 
-**Run manually (one-off):**
+### Running Azure DevOps reviewer manually (one-off)
 
 ```bash
 npm run build
@@ -134,6 +134,31 @@ AZURE_DEVOPS_PR_ID=42 \
 node -r tsconfig-paths/register dist/reviewers/azure.js
 ```
 
+## Running Locally (CLI)
+
+You can run the reviewer locally against a specific commit or your uncommitted working tree changes using the local reviewer CLI.
+
+**1. Configure environment variables:**
+Create a `.env` or `.env.local` file in the project root:
+
+```env
+ANTHROPIC_API_KEY=your-api-key-here
+ANTHROPIC_THINKING=2048 # Optional: enable thinking
+```
+
+**2. Run the CLI:**
+
+- Review current **uncommitted changes** relative to `HEAD`:
+  ```bash
+  npm run review:commit
+  # or
+  npx tsx src/reviewers/local.ts
+  ```
+- Review a **specific commit** or revision (e.g., `main` or a commit SHA):
+  ```bash
+  npx tsx src/reviewers/local.ts <SHA_OR_REF>
+  ```
+
 ## Development
 
 ```bash
@@ -146,6 +171,16 @@ npx tsc --noEmit     # type-check only
 
 Compiled output goes to `dist/`, mirroring the source layout.
 
-## Model
+## Configuration & Model
 
-Uses `claude-opus-4-7` with an 8 192-token output budget. To switch models or adjust the prompt, edit `src/lib/core/prompt.ts`.
+### Environment Variables
+
+You can configure the reviewer using the following environment variables:
+
+| Variable             | Description                                                                                                                                                                                                                                                                                                 |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ANTHROPIC_API_KEY`  | **Required.** Your Anthropic API key.                                                                                                                                                                                                                                                                       |
+| `ANTHROPIC_MODEL`    | The model to use. Defaults to `claude-haiku-4-5-20251001`.                                                                                                                                                                                                                                                  |
+| `ANTHROPIC_THINKING` | Control the thinking budget. Set to `false`, `off`, `0` to disable (default), or a number (e.g. `2048`, `4096`) to enable with a specific token budget (minimum `1024`, defaults to `2048` if non-numeric/invalid). When thinking is enabled, the API request temperature is automatically locked to `1.0`. |
+
+By default, the reviewer uses the `claude-haiku-4-5-20251001` model with a max output token limit of 8,192 (`MAX_TOKENS = 8192`). To adjust the core prompt rules, check [src/lib/core/prompt.ts](file:///Users/mortena/src/staff-engineer-pr-reviewer/src/lib/core/prompt.ts).

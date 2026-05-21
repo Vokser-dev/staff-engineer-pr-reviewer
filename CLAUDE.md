@@ -32,6 +32,15 @@ The codebase is structured as follows:
 
 **`tsconfig.json`** — compiles the `src/` directory into `dist/` using the `"rootDir": "./src"` option in `tsconfig.build.json`. Resolves `@/*` path aliases.
 
+## Model & Thinking Configuration
+
+- **Default Model**: `claude-haiku-4-5-20251001` with `MAX_TOKENS = 8192`.
+- **Model Override**: Can be configured using the `ANTHROPIC_MODEL` environment variable.
+- **Thinking Budget**: Controlled via the `ANTHROPIC_THINKING` environment variable:
+  - If set to `false`, `off`, `0`, or left unset, thinking is disabled.
+  - If set to a number (e.g. `2048`), thinking is enabled with that number as the `budget_tokens` (must be >= 1024, defaults to 2048 if invalid or non-numeric).
+  - When thinking is enabled, `temperature` is set to `1.0`.
+
 ## Key constraints
 
 - Both reviewers post inline comments. GitHub uses `pulls.createReview` (formal review with `event` + `comments[]` anchored via `path` + `line` + `side: "RIGHT"`); Azure uses `/threads` with `threadContext` (anchors on the latest right-side view).
