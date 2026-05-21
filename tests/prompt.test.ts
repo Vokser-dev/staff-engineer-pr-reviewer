@@ -1,8 +1,10 @@
 import {
   buildReviewPrompt,
   formatInlineCommentBody,
+  getThinkingParameters,
   PullRequestContext,
   ReviewComment,
+  runReview,
 } from "@/lib/core/prompt";
 import { parseReviewResponse } from "@/lib/core/reviewResponse";
 
@@ -34,7 +36,7 @@ describe("formatInlineCommentBody", () => {
       body: "Noe annet.",
       severity: "minor",
     } as unknown as ReviewComment;
-    expect(formatInlineCommentBody(comment)).toBe("**[Mindre]** Noe annet.");
+    expect(formatInlineCommentBody(comment)).toBe("**[Lav]** Noe annet.");
   });
 });
 
@@ -303,5 +305,144 @@ Andre markdown.
     const { markdown, inlineComments } = parseReviewResponse("");
     expect(markdown).toBe("");
     expect(inlineComments).toEqual([]);
+  });
+});
+
+describe("getThinkingParameters", () => {
+  it("should return empty object if thinkingEnv is undefined or disabled", () => {
+    expect(getThinkingParameters()).toEqual({});
+    expect(getThinkingParameters("false")).toEqual({});
+    expect(getThinkingParameters("off")).toEqual({});
+    expect(getThinkingParameters("0")).toEqual({});
+  });
+
+  it("should return budget 2048 and temperature 1.0 for truthy non-numeric values", () => {
+    expect(getThinkingParameters("true")).toEqual({
+      thinking: { type: "enabled", budget_tokens: 2048 },
+      temperature: 1.0,
+    });
+    expect(getThinkingParameters("on")).toEqual({
+      thinking: { type: "enabled", budget_tokens: 2048 },
+      temperature: 1.0,
+    });
+  });
+
+  it("should parse numeric budget if >= 1024", () => {
+    expect(getThinkingParameters("4096")).toEqual({
+      thinking: { type: "enabled", budget_tokens: 4096 },
+      temperature: 1.0,
+    });
+  });
+
+  it("should fallback to 2048 if numeric budget < 1024", () => {
+    expect(getThinkingParameters("500")).toEqual({
+      thinking: { type: "enabled", budget_tokens: 2048 },
+      temperature: 1.0,
+    });
+  });
+});
+
+describe("runReview", () => {
+  let mockClient: any;
+  let mockContext: PullRequestContext;
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    jest.resetModules();
+    process.env = { ...originalEnv };
+    mockContext = {
+      title: "Fix bug",
+      description: "Fixes a minor issue",
+      author: "mortena",
+      baseBranch: "main",
+      headBranch: "feature",
+      files: [],
+    };
+    mockClient = {
+      messages: {
+        create: jest.fn().mockResolvedValue({
+          content: [{ type: "text", text: "En kjempefin PR!" }],
+        }),
+      },
+    };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it("should default to standard cache control on system prompt and no thinking/temperature parameters", async () => {
+    await runReview(mockClient, mockContext);
+
+    expect(mockClient.messages.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        system: [
+          {
+            type: "text",
+            text: expect.any(String),
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+      }),
+    );
+    const args = mockClient.messages.create.mock.calls[0][0];
+    expect(args.thinking).toBeUndefined();
+    expect(args.temperature).toBeUndefined();
+  });
+
+  it("should configure default thinking (budget 2048) and temperature 1.0 when ANTHROPIC_THINKING is enabled (truthy)", async () => {
+    process.env.ANTHROPIC_THINKING = "true";
+    await runReview(mockClient, mockContext);
+
+    const args = mockClient.messages.create.mock.calls[0][0];
+    expect(args.thinking).toEqual({
+      type: "enabled",
+      budget_tokens: 2048,
+    });
+    expect(args.temperature).toBe(1.0);
+  });
+
+  it("should configure custom thinking budget when ANTHROPIC_THINKING is set to a valid numeric budget", async () => {
+    process.env.ANTHROPIC_THINKING = "4096";
+    await runReview(mockClient, mockContext);
+
+    const args = mockClient.messages.create.mock.calls[0][0];
+    expect(args.thinking).toEqual({
+      type: "enabled",
+      budget_tokens: 4096,
+    });
+    expect(args.temperature).toBe(1.0);
+  });
+
+  it("should fallback to 2048 if ANTHROPIC_THINKING is set to an invalid budget below 1024", async () => {
+    process.env.ANTHROPIC_THINKING = "500";
+    await runReview(mockClient, mockContext);
+
+    const args = mockClient.messages.create.mock.calls[0][0];
+    expect(args.thinking).toEqual({
+      type: "enabled",
+      budget_tokens: 2048,
+    });
+    expect(args.temperature).toBe(1.0);
+  });
+
+  it("should not enable thinking if ANTHROPIC_THINKING is set to false, off or 0", async () => {
+    process.env.ANTHROPIC_THINKING = "false";
+    await runReview(mockClient, mockContext);
+    let args = mockClient.messages.create.mock.calls[0][0];
+    expect(args.thinking).toBeUndefined();
+    expect(args.temperature).toBeUndefined();
+
+    process.env.ANTHROPIC_THINKING = "off";
+    await runReview(mockClient, mockContext);
+    args = mockClient.messages.create.mock.calls[1][0];
+    expect(args.thinking).toBeUndefined();
+    expect(args.temperature).toBeUndefined();
+
+    process.env.ANTHROPIC_THINKING = "0";
+    await runReview(mockClient, mockContext);
+    args = mockClient.messages.create.mock.calls[2][0];
+    expect(args.thinking).toBeUndefined();
+    expect(args.temperature).toBeUndefined();
   });
 });

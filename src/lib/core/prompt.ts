@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 
-export const MODEL = "claude-opus-4-7" as const;
+export const MODEL = "claude-haiku-4-5-20251001" as const;
 
 export const MAX_TOKENS = 8192;
 
@@ -293,7 +293,7 @@ Skriv hele reviewen på **norsk (bokmål)**.${
 const SEVERITY_LABELS_NO: Record<ReviewComment["severity"], string> = {
   critical: "Kritisk",
   major: "Alvorlig",
-  minor: "Mindre",
+  minor: "Lav",
   nit: "Pirk",
 };
 
@@ -302,21 +302,53 @@ export function formatInlineCommentBody(comment: ReviewComment): string {
   return `**[${label}]** ${comment.body}`;
 }
 
+export function getThinkingParameters(thinkingEnv?: string): {
+  thinking?: { type: "enabled"; budget_tokens: number };
+  temperature?: number;
+} {
+  const isThinkingEnabled =
+    thinkingEnv && thinkingEnv !== "false" && thinkingEnv !== "off" && thinkingEnv !== "0";
+
+  if (!isThinkingEnabled) {
+    return {};
+  }
+
+  const parsedBudget = parseInt(thinkingEnv, 10);
+  const budgetTokens = !isNaN(parsedBudget) && parsedBudget >= 1024 ? parsedBudget : 2048;
+
+  return {
+    thinking: {
+      type: "enabled",
+      budget_tokens: budgetTokens,
+    },
+    temperature: 1.0,
+  };
+}
+
 export async function runReview(
   client: Anthropic,
   pr: PullRequestContext,
   options?: { requestInlineComments?: boolean },
 ): Promise<string> {
+  const extraParams = getThinkingParameters(process.env.ANTHROPIC_THINKING);
+
   const message = await client.messages.create({
     model: process.env.ANTHROPIC_MODEL || MODEL,
     max_tokens: MAX_TOKENS,
-    system: STAFF_ENGINEER_SYSTEM_PROMPT,
+    system: [
+      {
+        type: "text",
+        text: STAFF_ENGINEER_SYSTEM_PROMPT,
+        cache_control: { type: "ephemeral" },
+      },
+    ],
     messages: [
       {
         role: "user",
         content: buildReviewPrompt(pr, options),
       },
     ],
+    ...extraParams,
   });
 
   const textBlock = message.content.find((b) => b.type === "text");
