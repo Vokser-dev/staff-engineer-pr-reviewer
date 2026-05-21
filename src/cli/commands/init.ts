@@ -118,37 +118,9 @@ async function initGithub(): Promise<void> {
     },
     { onCancel },
   );
-  const { pinVersion } = await prompts(
-    {
-      type: "select",
-      name: "pinVersion",
-      message: "Pin to a specific reviewer version, or always use latest?",
-      choices: [
-        { title: "Always use latest (recommended)", value: false },
-        { title: "Pin to a specific version", value: true },
-      ],
-      initial: 0,
-    },
-    { onCancel },
-  );
-
-  let versionPin: string | undefined;
-  if (pinVersion) {
-    const { v } = await prompts(
-      {
-        type: "text",
-        name: "v",
-        message: "Version to pin (e.g. 1.0.0):",
-      },
-      { onCancel },
-    );
-    versionPin = v && String(v).trim();
-  }
-
   const content = renderGithubWorkflow({
     branches,
     nodeVersion: String(nodeVersion ?? DEFAULT_NODE_VERSION),
-    versionPin,
   });
 
   const targetPath = PLATFORM_OUTPUT_PATHS.github;
@@ -176,7 +148,7 @@ async function initGithub(): Promise<void> {
   console.log("  4. Open a PR to trigger the first review");
   console.log(
     "\nRun " +
-      pinkArrow("npx @henriksvendsgard/staff-engineer-pr-reviewer doctor") +
+      pinkArrow("npx github:henriksvendsgard/staff-engineer-pr-reviewer doctor") +
       " any time to verify the setup.",
   );
 }
@@ -250,7 +222,7 @@ async function initAzure(): Promise<void> {
   );
   console.log(
     "\nRun " +
-      pinkArrow("npx @henriksvendsgard/staff-engineer-pr-reviewer doctor") +
+      pinkArrow("npx github:henriksvendsgard/staff-engineer-pr-reviewer doctor") +
       " to verify the setup.",
   );
 }

@@ -11,7 +11,11 @@ interface CheckResult {
   hint?: string;
 }
 
-const PACKAGE_NAME = "@henriksvendsgard/staff-engineer-pr-reviewer";
+/** Git-URL form used in CLI hints and to verify the generated workflow content. */
+const PACKAGE_REF = "github:henriksvendsgard/staff-engineer-pr-reviewer";
+/** npm-style name used to detect if the consumer added the package as a project
+ *  dependency (uncommon for CI tools, but possible). */
+const PACKAGE_NPM_NAME = "@henriksvendsgard/staff-engineer-pr-reviewer";
 
 const STATUS_GLYPH: Record<CheckStatus, string> = {
   ok: "\u001b[32m✓\u001b[0m",
@@ -34,7 +38,7 @@ function checkWorkflowFile(filePath: string, packageName: string): CheckResult {
     return {
       status: "fail",
       message: `Workflow file missing: ${filePath}`,
-      hint: `Run: npx ${PACKAGE_NAME} init`,
+      hint: `Run: npx ${PACKAGE_REF} init`,
     };
   }
   if (!content.includes(packageName)) {
@@ -100,10 +104,10 @@ function checkNoNodeModulesPolicy(): CheckResult {
       devDependencies?: Record<string, string>;
     };
     const allDeps = { ...(parsed.dependencies ?? {}), ...(parsed.devDependencies ?? {}) };
-    if (PACKAGE_NAME in allDeps) {
+    if (PACKAGE_NPM_NAME in allDeps) {
       return {
         status: "info",
-        message: `Project depends on ${PACKAGE_NAME} directly (${allDeps[PACKAGE_NAME]})`,
+        message: `Project depends on ${PACKAGE_NPM_NAME} directly (${allDeps[PACKAGE_NPM_NAME]})`,
         hint: "You can use the local binary directly instead of npx, e.g. 'npx staff-engineer-pr-reviewer github'.",
       };
     }
@@ -146,7 +150,7 @@ export async function runDoctor(_args: string[]): Promise<void> {
         {
           status: "warn",
           message: "No CI configuration found",
-          hint: `If this is a CI-targeted setup, run: npx ${PACKAGE_NAME} init`,
+          hint: `If this is a CI-targeted setup, run: npx ${PACKAGE_REF} init`,
         },
       ],
     });
@@ -155,7 +159,7 @@ export async function runDoctor(_args: string[]): Promise<void> {
   for (const platform of detection.platforms as Platform[]) {
     const filePath = PLATFORM_OUTPUT_PATHS[platform];
     const checks: CheckResult[] = [];
-    checks.push(checkWorkflowFile(filePath, PACKAGE_NAME));
+    checks.push(checkWorkflowFile(filePath, PACKAGE_REF));
 
     if (platform === "github") {
       checks.push(checkGithubPermissions(filePath));

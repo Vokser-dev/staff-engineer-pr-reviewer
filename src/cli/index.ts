@@ -3,14 +3,16 @@
 import { runInit } from "@/cli/commands/init";
 import { runDoctor } from "@/cli/commands/doctor";
 
-const PACKAGE_NAME = "@henriksvendsgard/staff-engineer-pr-reviewer";
+/** Git-URL form used in help text. Consumers install via `npx <this>` — the
+ *  open GitHub repo is the source of truth, no npm registry involved. */
+const PACKAGE_REF = "github:henriksvendsgard/staff-engineer-pr-reviewer";
 
 function printHelp(): void {
   console.log(`
 Staff Engineer PR Reviewer
 
 Usage:
-  npx ${PACKAGE_NAME} <command> [args]
+  npx ${PACKAGE_REF} <command> [args]
 
 Commands:
   init                Interactive wizard that detects your CI platform and
@@ -24,12 +26,14 @@ Commands:
   --version, -v       Print the package version.
 
 Examples:
-  npx ${PACKAGE_NAME} init
-  npx ${PACKAGE_NAME} doctor
-  npx ${PACKAGE_NAME} local
-  npx ${PACKAGE_NAME} local HEAD~1
+  npx ${PACKAGE_REF} init
+  npx ${PACKAGE_REF} doctor
+  npx ${PACKAGE_REF} local
+  npx ${PACKAGE_REF} local HEAD~1
 
 Most consumers only need 'init' once, then the generated workflow takes over.
+All consumers track the default branch of the reviewer repo — there is no
+version pinning. Roll out changes by pushing to the default branch.
 `);
 }
 

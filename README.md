@@ -24,29 +24,29 @@ Both platforms post up to 8 **inline** comments on critical/major/minor items in
 
 ## Quick start
 
-In your target repository:
+The package is installed directly from GitHub via `npx` — no npm registry, no extra auth, no `npm install` in your repo. All consumers always track the reviewer repo's default branch; there is no version pinning. In your target repository:
 
 ```bash
-npx @henriksvendsgard/staff-engineer-pr-reviewer init
+npx github:henriksvendsgard/staff-engineer-pr-reviewer init
 ```
 
-The wizard detects whether you're on GitHub or Azure DevOps, asks a few questions, and writes the workflow/pipeline file for you. Then add the `ANTHROPIC_API_KEY` secret, commit the generated file, and open a PR.
+The wizard detects whether you're on GitHub or Azure DevOps, asks a few questions (target branches, Node version), and writes the workflow/pipeline file for you. Then add the `ANTHROPIC_API_KEY` secret, commit the generated file, and open a PR.
 
 Verify the setup at any time:
 
 ```bash
-npx @henriksvendsgard/staff-engineer-pr-reviewer doctor
+npx github:henriksvendsgard/staff-engineer-pr-reviewer doctor
 ```
 
 ## CLI commands
 
-| Command                                                   | What it does                                                                      |
-| --------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `npx @henriksvendsgard/staff-engineer-pr-reviewer init`   | Interactive wizard — detects the platform and generates the right workflow file.  |
-| `npx @henriksvendsgard/staff-engineer-pr-reviewer doctor` | Checks the current project's setup and reports anything missing or misconfigured. |
-| `npx @henriksvendsgard/staff-engineer-pr-reviewer github` | Runs the GitHub reviewer (called by the generated workflow inside CI).            |
-| `npx @henriksvendsgard/staff-engineer-pr-reviewer azure`  | Runs the Azure DevOps reviewer (called by the generated pipeline inside CI).      |
-| `npx @henriksvendsgard/staff-engineer-pr-reviewer local`  | Reviews your uncommitted changes (or a specific SHA) and prints the result.       |
+| Command                                                         | What it does                                                                      |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `npx github:henriksvendsgard/staff-engineer-pr-reviewer init`   | Interactive wizard — detects the platform and generates the right workflow file.  |
+| `npx github:henriksvendsgard/staff-engineer-pr-reviewer doctor` | Checks the current project's setup and reports anything missing or misconfigured. |
+| `npx github:henriksvendsgard/staff-engineer-pr-reviewer github` | Runs the GitHub reviewer (called by the generated workflow inside CI).            |
+| `npx github:henriksvendsgard/staff-engineer-pr-reviewer azure`  | Runs the Azure DevOps reviewer (called by the generated pipeline inside CI).      |
+| `npx github:henriksvendsgard/staff-engineer-pr-reviewer local`  | Reviews your uncommitted changes (or a specific SHA) and prints the result.       |
 
 ## GitHub Actions
 
@@ -72,7 +72,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: npx --yes @henriksvendsgard/staff-engineer-pr-reviewer github
+      - run: npx --yes github:henriksvendsgard/staff-engineer-pr-reviewer github
         env:
           INPUT_GITHUB-TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_ANTHROPIC-API-KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -111,7 +111,7 @@ jobs:
       - task: NodeTool@0
         inputs:
           versionSpec: "22.x"
-      - script: npx --yes @henriksvendsgard/staff-engineer-pr-reviewer azure
+      - script: npx --yes github:henriksvendsgard/staff-engineer-pr-reviewer azure
         env:
           ANTHROPIC_API_KEY: $(ANTHROPIC_API_KEY)
           AZURE_DEVOPS_PAT: $(AZURE_DEVOPS_PAT)
@@ -139,27 +139,22 @@ You can run the reviewer against your local working tree without touching CI:
 
 ```bash
 # uncommitted changes vs HEAD
-npx @henriksvendsgard/staff-engineer-pr-reviewer local
+npx github:henriksvendsgard/staff-engineer-pr-reviewer local
 
 # a specific commit or ref
-npx @henriksvendsgard/staff-engineer-pr-reviewer local HEAD~1
+npx github:henriksvendsgard/staff-engineer-pr-reviewer local HEAD~1
 ```
 
 The local CLI reads `ANTHROPIC_API_KEY` from your environment (or a `.env` / `.env.local` in cwd) and prints the review to stdout — useful for previewing what the bot would say before pushing.
 
-## Pinning to a specific version
+## Versioning model
 
-`init` asks whether you want to track latest or pin a version. To track latest (default):
+There is no version pinning as of now. Coming later with npm packaging. Every consumer always installs from the default branch of the reviewer repo, so all projects move forward in lockstep.
 
-```bash
-npx --yes @henriksvendsgard/staff-engineer-pr-reviewer github
-```
+- **Rolling out a change**: push to the default branch. The next PR build in every consumer picks it up.
+- **Staging a change**: change the reviewer repo's default branch in GitHub settings (for example to `develop`) while you test. Consumers automatically follow. Switch back to `main` when ready.
 
-To pin to a specific release:
-
-```bash
-npx --yes @henriksvendsgard/staff-engineer-pr-reviewer@1.0.0 github
-```
+This trades release ceremony for simplicity. If you ever want fine-grained pinning (per-consumer tags, blue/green releases), see the `PACKAGE_REF` constant in `src/cli/templates.ts` and reintroduce a `versionPin` field on the template options.
 
 ## Configuration
 

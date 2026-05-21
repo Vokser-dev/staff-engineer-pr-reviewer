@@ -1,16 +1,21 @@
-const PACKAGE_NAME = "@henriksvendsgard/staff-engineer-pr-reviewer";
+/** Git-URL spec used by `npx`. Pointing at the open GitHub repo avoids npm
+ *  publishing; npm clones the repo on every CI run, executes `prepack` to
+ *  build `dist/`, and resolves the single `bin` automatically.
+ *
+ *  Consumers always track the repo's default branch — there is no version
+ *  pinning. To roll out a change to everyone, push to the default branch.
+ *  To stage a change, set the repo's default branch to your test branch
+ *  in GitHub settings; consumers will pick it up on the next PR build. */
+const PACKAGE_REF = "github:henriksvendsgard/staff-engineer-pr-reviewer";
 
 export interface GithubTemplateOptions {
   branches: string[];
   nodeVersion: string;
-  /** When true, pin the package to a specific version; otherwise always use latest. */
-  versionPin?: string;
 }
 
 export function renderGithubWorkflow(opts: GithubTemplateOptions): string {
   const branchesList = opts.branches.map((b) => `      - ${b}`).join("\n");
   const branchesBlock = opts.branches.length ? `\n    branches:\n${branchesList}` : "";
-  const pkgRef = opts.versionPin ? `${PACKAGE_NAME}@${opts.versionPin}` : PACKAGE_NAME;
 
   return `name: PR Review
 
@@ -32,7 +37,7 @@ jobs:
           node-version: "${opts.nodeVersion}"
 
       - name: Run Staff Engineer review
-        run: npx --yes ${pkgRef} github
+        run: npx --yes ${PACKAGE_REF} github
         env:
           INPUT_GITHUB-TOKEN: \${{ secrets.GITHUB_TOKEN }}
           INPUT_ANTHROPIC-API-KEY: \${{ secrets.ANTHROPIC_API_KEY }}
@@ -50,12 +55,10 @@ export interface AzureTemplateOptions {
   repo: string;
   branches: string[];
   nodeVersion: string;
-  versionPin?: string;
 }
 
 export function renderAzurePipeline(opts: AzureTemplateOptions): string {
   const branchesList = opts.branches.map((b) => `      - ${b}`).join("\n");
-  const pkgRef = opts.versionPin ? `${PACKAGE_NAME}@${opts.versionPin}` : PACKAGE_NAME;
 
   return `trigger: none
 
@@ -81,7 +84,7 @@ jobs:
           versionSpec: "${opts.nodeVersion}.x"
         displayName: Set up Node.js
 
-      - script: npx --yes ${pkgRef} azure
+      - script: npx --yes ${PACKAGE_REF} azure
         displayName: Run Staff Engineer review
         env:
           ANTHROPIC_API_KEY: $(ANTHROPIC_API_KEY)

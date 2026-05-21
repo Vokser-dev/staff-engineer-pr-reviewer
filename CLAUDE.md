@@ -36,7 +36,7 @@ The codebase is structured as follows:
 
 **`src/cli/detect.ts`** — best-effort detection of the consumer's CI platform by looking for marker paths (`.github/workflows`, `azure-pipelines.yml`, etc.). Returns both the list of detected platforms and the unique platform if exactly one was found.
 
-**`src/cli/templates.ts`** — pure render functions for the GitHub workflow and Azure pipeline YAML. Both reference the published package by name and use `npx --yes` so the consuming repo never needs to clone this repo. `versionPin` lets `init` pin to a specific version instead of always pulling latest. Both templates forward `ANTHROPIC_MODEL` and `ANTHROPIC_THINKING` as optional overrides (GitHub: `vars.X`; Azure: `$(X)` paired with empty top-level `variables:` defaults — see the Azure macro caveat below).
+**`src/cli/templates.ts`** — pure render functions for the GitHub workflow and Azure pipeline YAML. Both reference the package via the bare `github:owner/repo` URL (no ref pin — see "Distribution" below) and use `npx --yes` so the consuming repo never needs to clone this repo. Both templates forward `ANTHROPIC_MODEL` and `ANTHROPIC_THINKING` as optional overrides (GitHub: `vars.X`; Azure: `$(X)` paired with empty top-level `variables:` defaults — see the Azure macro caveat below).
 
 **`src/cli/commands/init.ts`** — interactive wizard. Detects the platform, asks for branches, Node version, and (for Azure) org/project/repo, then writes the template to the right path. Handles overwrite confirmation and prints next-steps including which secret(s) to add.
 
@@ -55,11 +55,15 @@ The codebase is structured as follows:
 
 ## Distribution
 
-The package is published to npm and consumed by other repos via `npx`. The whole point is that consuming projects do **not** need to clone this repo, build it, or maintain a forked action — they just run `npx @henriksvendsgard/staff-engineer-pr-reviewer <command>`.
+The package is **not published to npm** and **does not use version pinning**. Consumers install it directly from the public GitHub repo via `npx github:henriksvendsgard/staff-engineer-pr-reviewer <command>`. Every consumer always tracks the default branch — there is no `#tag` / `#sha` suffix on the URL. The whole point is that consuming projects do **not** need to clone this repo, build it, or maintain a forked action; the reviewer is the same for everyone, and rollout is "push to default branch".
 
-- `bin.staff-engineer-pr-reviewer` points to `dist/cli/index.js`, so all five subcommands share one entrypoint.
-- `package.json` ships `files: ["dist"]` only — no source.
-- The generated CI workflows always run `npx --yes @henriksvendsgard/staff-engineer-pr-reviewer <github|azure>`. There is intentionally no GitHub Action wrapper (`action.yml`) — keeping the surface as one npm package makes versioning trivial and avoids dist-bundle drift.
+- `bin.staff-engineer-pr-reviewer` points to `dist/cli/index.js`, so all five subcommands share one entrypoint. npm resolves the bin automatically because the package only declares one bin entry.
+- `scripts.prepack: "npm run build"` is what makes git-URL installs work. When `npm`/`npx` clones the repo to create a tarball, `prepack` runs `tsc` so `dist/` exists at install time (it's intentionally `.gitignore`d).
+- `package.json` ships `files: ["dist"]` only — no source — when packing a tarball.
+- The generated CI workflows always run `npx --yes github:henriksvendsgard/staff-engineer-pr-reviewer <github|azure>`. There is intentionally no GitHub Action wrapper (`action.yml`) — keeping the surface as one npx-able package avoids dist-bundle drift.
+- **Releasing is just `git push` to the default branch.** No tags, no `npm publish`, no version bumps. Every consumer's next PR build picks up the change.
+- **Staging a change**: temporarily set the repo's default branch (e.g. to `develop`) in GitHub Settings; consumers automatically follow. Switch back to `main` when ready.
+- To later introduce versioning, see `PACKAGE_REF` in `src/cli/templates.ts`; reintroducing a `versionPin` field on the template options and a `#${ref}` suffix is a contained change.
 
 ## Key constraints
 

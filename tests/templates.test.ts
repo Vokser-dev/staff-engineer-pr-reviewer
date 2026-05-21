@@ -1,7 +1,7 @@
 import { renderAzurePipeline, renderGithubWorkflow } from "@/cli/templates";
 
 describe("renderGithubWorkflow", () => {
-  it("renders a workflow with branches, node version and unpinned package", () => {
+  it("renders a workflow that tracks the reviewer repo's default branch", () => {
     const out = renderGithubWorkflow({
       branches: ["main", "develop"],
       nodeVersion: "22",
@@ -11,20 +11,12 @@ describe("renderGithubWorkflow", () => {
     expect(out).toContain("- main");
     expect(out).toContain("- develop");
     expect(out).toContain('node-version: "22"');
-    expect(out).toContain("npx --yes @henriksvendsgard/staff-engineer-pr-reviewer github");
-    expect(out).not.toContain("@henriksvendsgard/staff-engineer-pr-reviewer@");
+    expect(out).toContain("npx --yes github:henriksvendsgard/staff-engineer-pr-reviewer github");
+    // No git ref pin — consumers always track the default branch.
+    expect(out).not.toContain("github:henriksvendsgard/staff-engineer-pr-reviewer#");
     expect(out).toContain("pull-requests: write");
     expect(out).toContain("${{ secrets.GITHUB_TOKEN }}");
     expect(out).toContain("${{ secrets.ANTHROPIC_API_KEY }}");
-  });
-
-  it("pins the package version when versionPin is set", () => {
-    const out = renderGithubWorkflow({
-      branches: ["main"],
-      nodeVersion: "22",
-      versionPin: "1.2.3",
-    });
-    expect(out).toContain("npx --yes @henriksvendsgard/staff-engineer-pr-reviewer@1.2.3 github");
   });
 
   it("omits the branches block when none are given", () => {
@@ -61,7 +53,7 @@ describe("renderAzurePipeline", () => {
     expect(out).toContain("- main");
     expect(out).toContain("- release/*");
     expect(out).toContain('versionSpec: "22.x"');
-    expect(out).toContain("npx --yes @henriksvendsgard/staff-engineer-pr-reviewer azure");
+    expect(out).toContain("npx --yes github:henriksvendsgard/staff-engineer-pr-reviewer azure");
     expect(out).toContain("ANTHROPIC_API_KEY: $(ANTHROPIC_API_KEY)");
     expect(out).toContain("AZURE_DEVOPS_PAT: $(AZURE_DEVOPS_PAT)");
     expect(out).toContain("AZURE_DEVOPS_ORG: my-org");
