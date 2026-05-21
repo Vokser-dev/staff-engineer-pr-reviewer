@@ -82,7 +82,7 @@ async function dispatch(argv: string[]): Promise<number> {
 
     case "local": {
       const { run } = await import("@/reviewers/local");
-      await run();
+      await run(rest);
       return 0;
     }
 
