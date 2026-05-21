@@ -9,7 +9,11 @@ export interface ReviewHost {
 export type ReviewFunction = (
   pr: PullRequestContext,
   options?: { requestInlineComments?: boolean },
-) => Promise<{ markdown: string; inlineComments: ReviewComment[] }>;
+) => Promise<{
+  markdown: string;
+  inlineComments: ReviewComment[];
+  overallVerdict?: "approve" | "comment" | "request-changes";
+}>;
 
 export async function runReviewSession(
   host: ReviewHost,

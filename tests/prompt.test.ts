@@ -70,14 +70,15 @@ describe("buildReviewPrompt", () => {
 
   it("should append inline comments instruction when requested", () => {
     const prompt = buildReviewPrompt(mockContext, { requestInlineComments: true });
-    expect(prompt).toContain("## Inline comments (required for tooling)");
+    expect(prompt).toContain("## Inline-kommentarer (påkrevd for verktøy)");
     expect(prompt).toContain("inlineComments");
+    expect(prompt).toContain("overallVerdict");
   });
 
   it("should handle empty description", () => {
     const contextWithoutDesc = { ...mockContext, description: "" };
     const prompt = buildReviewPrompt(contextWithoutDesc, { requestInlineComments: false });
-    expect(prompt).toContain("_No description provided._");
+    expect(prompt).toContain("_Ingen beskrivelse gitt._");
   });
 });
 
@@ -135,7 +136,7 @@ Dette ser bra ut.
     expect(inlineComments).toEqual([]);
   });
 
-  it("should filter out severities outside the critical|major whitelist", () => {
+  it("should accept critical, major, and minor severities but filter nit", () => {
     const response = `Review.
 \`\`\`json
 {
@@ -144,21 +145,27 @@ Dette ser bra ut.
       "file": "src/auth.ts",
       "line": 42,
       "severity": "minor",
-      "body": "Dette bør filtreres ut"
+      "body": "Dette bør beholdes som minor"
     },
     {
       "file": "src/auth.ts",
       "line": 43,
       "severity": "major",
-      "body": "Dette bør beholdes"
+      "body": "Dette bør beholdes som major"
+    },
+    {
+      "file": "src/auth.ts",
+      "line": 44,
+      "severity": "nit",
+      "body": "Dette bør filtreres ut"
     }
   ]
 }
 \`\`\``;
     const { inlineComments } = parseReviewResponse(response);
-    expect(inlineComments).toHaveLength(1);
-    expect(inlineComments[0].severity).toBe("major");
-    expect(inlineComments[0].body).toBe("Dette bør beholdes");
+    expect(inlineComments).toHaveLength(2);
+    expect(inlineComments[0].severity).toBe("minor");
+    expect(inlineComments[1].severity).toBe("major");
   });
 
   it("should filter out non-integer or negative line numbers", () => {

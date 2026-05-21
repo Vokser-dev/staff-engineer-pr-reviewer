@@ -2,21 +2,31 @@ import * as core from "@actions/core";
 import * as github from "@actions/github";
 import Anthropic from "@anthropic-ai/sdk";
 import {
+  formatInlineCommentBody,
   PullRequestContext,
   PullRequestFile,
-  ReviewHost,
-  ReviewFunction,
-  runReviewSession,
+  ReviewComment,
   reviewPullRequest,
   ReviewerPlugin,
 } from "@/lib/index";
 
-async function getPullRequestContext(
+type ReviewEvent = "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
+
+/** Review comment that has been validated to have a concrete line anchor.
+ *  This is what `pulls.createReview` requires for inline comments. */
+type AnchoredReviewComment = ReviewComment & { line: number };
+
+interface PullRequestData {
+  context: PullRequestContext;
+  headSha: string;
+}
+
+async function getPullRequestData(
   octokit: ReturnType<typeof github.getOctokit>,
   owner: string,
   repo: string,
   pullNumber: number,
-): Promise<PullRequestContext> {
+): Promise<PullRequestData> {
   const { data: pr } = await octokit.rest.pulls.get({
     owner,
     repo,
@@ -39,16 +49,128 @@ async function getPullRequestContext(
   }));
 
   return {
-    title: pr.title,
-    description: pr.body ?? "",
-    author: pr.user?.login ?? "unknown",
-    baseBranch: pr.base.ref,
-    headBranch: pr.head.ref,
-    files,
+    context: {
+      title: pr.title,
+      description: pr.body ?? "",
+      author: pr.user?.login ?? "unknown",
+      baseBranch: pr.base.ref,
+      headBranch: pr.head.ref,
+      files,
+    },
+    headSha: pr.head.sha,
   };
 }
 
-async function postReviewComment(
+/** Returns the set of line numbers (in the new file) that GitHub will accept
+ *  as inline review comment anchors on the RIGHT side. These are added (`+`)
+ *  lines from the unified diff. */
+function extractAddedLines(patch: string | undefined): Set<number> {
+  const lines = new Set<number>();
+  if (!patch) return lines;
+
+  let newLineNum = 0;
+  for (const raw of patch.split("\n")) {
+    const hunk = raw.match(/^@@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/);
+    if (hunk) {
+      newLineNum = parseInt(hunk[1], 10);
+      continue;
+    }
+    if (raw.startsWith("+++") || raw.startsWith("---")) continue;
+    if (raw.startsWith("\\")) continue;
+
+    if (raw.startsWith("+")) {
+      lines.add(newLineNum);
+      newLineNum++;
+    } else if (raw.startsWith(" ")) {
+      newLineNum++;
+    }
+  }
+  return lines;
+}
+
+function buildAddedLinesIndex(files: PullRequestFile[]): Map<string, Set<number>> {
+  const index = new Map<string, Set<number>>();
+  for (const file of files) {
+    index.set(file.filename, extractAddedLines(file.patch));
+  }
+  return index;
+}
+
+function filterInlineComments(
+  comments: ReviewComment[],
+  index: Map<string, Set<number>>,
+): AnchoredReviewComment[] {
+  const kept: AnchoredReviewComment[] = [];
+  for (const c of comments) {
+    if (c.line == null) {
+      core.warning(`Skipping inline comment on ${c.filename}: missing line number`);
+      continue;
+    }
+    const validLines = index.get(c.filename);
+    if (!validLines) {
+      core.warning(`Skipping inline comment: file "${c.filename}" not in PR diff`);
+      continue;
+    }
+    if (!validLines.has(c.line)) {
+      core.warning(`Skipping inline comment on ${c.filename}:${c.line} (line not in diff)`);
+      continue;
+    }
+    kept.push({ ...c, line: c.line });
+  }
+  return kept;
+}
+
+function verdictToEvent(
+  verdict: "approve" | "comment" | "request-changes" | undefined,
+): ReviewEvent {
+  switch (verdict) {
+    case "approve":
+      return "APPROVE";
+    case "request-changes":
+      return "REQUEST_CHANGES";
+    case "comment":
+    default:
+      return "COMMENT";
+  }
+}
+
+/** Fallback used when Claude's `overallVerdict` is missing or invalid.
+ *  Mirrors the consistency rule from the prompt: any critical/major inline
+ *  comment implies REQUEST_CHANGES, otherwise COMMENT. */
+function deriveEventFromComments(comments: AnchoredReviewComment[]): ReviewEvent {
+  const blocksMerge = comments.some((c) => c.severity === "critical" || c.severity === "major");
+  return blocksMerge ? "REQUEST_CHANGES" : "COMMENT";
+}
+
+async function postReview(
+  octokit: ReturnType<typeof github.getOctokit>,
+  owner: string,
+  repo: string,
+  pullNumber: number,
+  commitId: string,
+  body: string,
+  event: ReviewEvent,
+  inlineComments: AnchoredReviewComment[],
+): Promise<void> {
+  const reviewComments = inlineComments.map((c) => ({
+    path: c.filename,
+    line: c.line,
+    side: "RIGHT" as const,
+    body: formatInlineCommentBody(c),
+  }));
+
+  await octokit.rest.pulls.createReview({
+    owner,
+    repo,
+    pull_number: pullNumber,
+    commit_id: commitId,
+    body,
+    event,
+    comments: reviewComments,
+  });
+}
+
+async function postFallbackComment(
   octokit: ReturnType<typeof github.getOctokit>,
   owner: string,
   repo: string,
@@ -89,24 +211,50 @@ export const run: ReviewerPlugin["run"] = async (): Promise<void> => {
 
   const anthropic = new Anthropic({ apiKey: anthropicApiKey });
 
-  const host: ReviewHost = {
-    async fetchContext() {
-      return getPullRequestContext(octokit, owner, repo, pullNumber);
-    },
-    async publishSummary(markdown) {
-      await postReviewComment(octokit, owner, repo, pullNumber, markdown);
-      core.setOutput("review", markdown);
-    },
-    publishInline(_comments, _ctx) {
-      return Promise.resolve(0);
-    },
-  };
+  const { context: prContext, headSha } = await getPullRequestData(
+    octokit,
+    owner,
+    repo,
+    pullNumber,
+  );
 
-  const reviewFn: ReviewFunction = (pr, options) => {
-    return reviewPullRequest(anthropic, pr, { inline: options?.requestInlineComments });
-  };
+  core.info(`PR has ${prContext.files.length} changed file(s). Sending to Claude...`);
 
-  await runReviewSession(host, reviewFn, { inline: false });
+  const { markdown, inlineComments, overallVerdict } = await reviewPullRequest(
+    anthropic,
+    prContext,
+    { inline: true },
+  );
+
+  const linesIndex = buildAddedLinesIndex(prContext.files);
+  const filteredComments = filterInlineComments(inlineComments, linesIndex);
+
+  const event =
+    overallVerdict !== undefined
+      ? verdictToEvent(overallVerdict)
+      : deriveEventFromComments(filteredComments);
+
+  if (overallVerdict === undefined) {
+    core.warning(
+      `Could not parse overallVerdict from Claude's response (missing or invalid JSON block). Derived event from inline severities: ${event}.`,
+    );
+  }
+
+  core.info(
+    `Posting review (event=${event}) with ${filteredComments.length} inline comment(s) (${inlineComments.length} requested).`,
+  );
+
+  try {
+    await postReview(octokit, owner, repo, pullNumber, headSha, markdown, event, filteredComments);
+    core.info("Review posted successfully.");
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    core.warning(`Failed to create formal review (${message}). Falling back to flat comment.`);
+    await postFallbackComment(octokit, owner, repo, pullNumber, markdown);
+    core.info("Fallback comment posted.");
+  }
+
+  core.setOutput("review", markdown);
 };
 
 if (require.main === module) {
