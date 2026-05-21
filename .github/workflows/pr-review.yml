@@ -18,15 +18,15 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "22"
+          cache: "npm"
 
       - run: npm ci
 
       - run: npm run build
 
       - name: Run Staff Engineer review
-        run: node dist/github/src/reviewer.js
+        run: node dist/reviewers/github.js
         env:
           INPUT_GITHUB-TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_ANTHROPIC-API-KEY: ${{ secrets.ANTHROPIC_API_KEY }}

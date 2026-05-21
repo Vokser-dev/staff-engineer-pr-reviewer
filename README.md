@@ -1,98 +1,107 @@
 # Staff Engineer PR Reviewer
 
-Automated pull request reviews powered by Claude. Posts a structured code review as a PR comment on every opened or updated pull request. Supports both GitHub Actions and Azure DevOps pipelines.
+Automated pull request reviews powered by Claude. Drop into any GitHub or Azure DevOps repo with a single `npx` command — no checkouts, no builds, no bespoke action to maintain. Posts a structured code review (inline + summary) on every opened or updated PR.
 
 ## What it reviews
 
 Focused review of **changed lines only** — high signal, low noise. Reviews are written in **Norwegian (bokmål)**. It skips pre-existing issues, style nits, and unrelated files.
 
-| Priority | What it flags |
-|---|---|
-| Security | Injection, XSS, auth gaps, secrets, unsafe handling of data |
-| Correctness | Bugs and contract mistakes introduced in the diff |
-| Readability | New/changed code that is genuinely hard to follow |
-| Debug noise | `console.log` / `debugger` left in changed production code |
-| Hardcoded text | User-facing strings that should be i18n or config |
+| Priority       | What it flags                                               |
+| -------------- | ----------------------------------------------------------- |
+| Security       | Injection, XSS, auth gaps, secrets, unsafe handling of data |
+| Correctness    | Bugs and contract mistakes introduced in the diff           |
+| Readability    | New/changed code that is genuinely hard to follow           |
+| Debug noise    | `console.log` / `debugger` left in changed production code  |
+| Hardcoded text | User-facing strings that should be i18n or config           |
 
 **Review output:**
 
 1. Sammendrag (2–3 setninger)
-2. Kritiske funn (hvis noen)
-3. Alvorlige funn (hvis noen; utelates når tom)
-4. Konklusjon: **GODKJENN** · **BE OM ENDRINGER** · **BLOKKER**
+2. Funn (med alvorlighetsgrad: critical, major, minor)
+3. Konklusjon: **GODKJENN** · **GODKJENN MED SMÅTING** · **BE OM ENDRINGER** · **BLOKKER**
 
-Azure also posts up to 8 **inline** comments on critical/major items in the diff.
+Both platforms post up to 8 **inline** comments on critical/major/minor items in the diff. GitHub uses a formal review (`pulls.createReview`) with an event mapped from the verdict; Azure posts inline thread comments.
+
+## Quick start
+
+The package is installed directly from GitHub via `npx` — no npm registry, no extra auth, no `npm install` in your repo. All consumers always track the reviewer repo's default branch; there is no version pinning. In your target repository:
+
+```bash
+npx github:henriksvendsgard/staff-engineer-pr-reviewer init
+```
+
+The wizard detects whether you're on GitHub or Azure DevOps, asks a few questions (target branches, Node version), and writes the workflow/pipeline file for you. Then add the `ANTHROPIC_API_KEY` secret, commit the generated file, and open a PR.
+
+Verify the setup at any time:
+
+```bash
+npx github:henriksvendsgard/staff-engineer-pr-reviewer doctor
+```
+
+## CLI commands
+
+| Command                                                         | What it does                                                                      |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `npx github:henriksvendsgard/staff-engineer-pr-reviewer init`   | Interactive wizard — detects the platform and generates the right workflow file.  |
+| `npx github:henriksvendsgard/staff-engineer-pr-reviewer doctor` | Checks the current project's setup and reports anything missing or misconfigured. |
+| `npx github:henriksvendsgard/staff-engineer-pr-reviewer github` | Runs the GitHub reviewer (called by the generated workflow inside CI).            |
+| `npx github:henriksvendsgard/staff-engineer-pr-reviewer azure`  | Runs the Azure DevOps reviewer (called by the generated pipeline inside CI).      |
+| `npx github:henriksvendsgard/staff-engineer-pr-reviewer local`  | Reviews your uncommitted changes (or a specific SHA) and prints the result.       |
 
 ## GitHub Actions
 
-**1. Add the secret**
-
-In your repo: Settings → Secrets and variables → Actions → New repository secret
-
-| Secret | Value |
-|---|---|
-| `ANTHROPIC_API_KEY` | Your Anthropic API key. |
-
-`GITHUB_TOKEN` is provided automatically.
-
-**2. Add the workflow**
-
-Copy `.github/workflows/pr-review.yml` into your target repository:
+`init` generates a workflow that looks like this:
 
 ```yaml
-name: Staff Engineer PR Review
+name: PR Review
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+    branches:
+      - main
 
 permissions:
   contents: read
   pull-requests: write
-  issues: write
 
 jobs:
   review:
-    name: AI Code Review
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
-      - run: npm ci
-      - run: npm run build
-      - name: Run Staff Engineer review
-        run: node dist/github/src/reviewer.js
+          node-version: "22"
+      - run: npx --yes github:henriksvendsgard/staff-engineer-pr-reviewer github
         env:
           INPUT_GITHUB-TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_ANTHROPIC-API-KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
+          ANTHROPIC_THINKING: ${{ vars.ANTHROPIC_THINKING }}
 ```
+
+No `checkout`, no `npm ci`, no build step in the consuming repo. The package and its dependencies are fetched on the fly by `npx`, the reviewer talks directly to the GitHub API for the diff, and `GITHUB_TOKEN` is provided automatically by Actions.
+
+Required setup in the target repository:
+
+1. **Secret**: `ANTHROPIC_API_KEY` (Settings → Secrets and variables → Actions → New repository secret).
+2. **Permissions**: the generated workflow declares `pull-requests: write` at the job level. If your org enforces stricter defaults you may also need to allow `Read and write permissions` under Settings → Actions → General.
 
 ## Azure DevOps
 
-**1. Create a Personal Access Token**
-
-Azure DevOps → User Settings → Personal Access Tokens. Required scopes:
-- Code → Read
-- Pull Request Threads → Read & Write
-
-**2. Add pipeline variables** (mark both as secret)
-
-| Variable | Value |
-|---|---|
-| `ANTHROPIC_API_KEY` | Your Anthropic API key |
-| `AZURE_DEVOPS_PAT` | The PAT from step 1 |
-
-**3. Add to `azure-pipelines.yml`**
+`init` generates a pipeline that looks like this:
 
 ```yaml
 trigger: none
+
 pr:
   branches:
     include:
       - main
+
+variables:
+  ANTHROPIC_MODEL: ""
+  ANTHROPIC_THINKING: ""
 
 jobs:
   - job: PRReview
@@ -101,37 +110,72 @@ jobs:
     steps:
       - task: NodeTool@0
         inputs:
-          versionSpec: '20.x'
-      - script: npm install
-      - script: npm run build
-      - script: node dist/azure/src/reviewer.js
-        displayName: Run Staff Engineer review
+          versionSpec: "22.x"
+      - script: npx --yes github:henriksvendsgard/staff-engineer-pr-reviewer azure
         env:
           ANTHROPIC_API_KEY: $(ANTHROPIC_API_KEY)
           AZURE_DEVOPS_PAT: $(AZURE_DEVOPS_PAT)
+          ANTHROPIC_MODEL: $(ANTHROPIC_MODEL)
+          ANTHROPIC_THINKING: $(ANTHROPIC_THINKING)
           AZURE_DEVOPS_ORG: my-org
           AZURE_DEVOPS_PROJECT: my-project
           AZURE_DEVOPS_REPO_ID: my-repo
           AZURE_DEVOPS_PR_ID: $(System.PullRequest.PullRequestId)
 ```
 
+Required setup in the target project:
+
+1. **Personal access token** with scopes `Code: Read` + `Pull Request Threads: Read & Write` (User Settings → Personal access tokens).
+2. **Pipeline variables** (mark both as secret):
+   - `ANTHROPIC_API_KEY` — your Anthropic key
+   - `AZURE_DEVOPS_PAT` — the PAT from step 1
+3. Wire the pipeline to the project (Pipelines → New pipeline → existing YAML) and open a PR.
+
 `$(System.PullRequest.PullRequestId)` is set automatically by Azure DevOps on PR builds.
 
-The Azure reviewer posts a **summary** PR comment plus **inline** comments on specific lines (critical/major issues). The PAT needs **Pull Request Threads → Read & Write** (same as above).
+## Running locally
 
-**Run manually (one-off):**
+You can run the reviewer against your local working tree without touching CI:
 
 ```bash
-npm run build
+# uncommitted changes vs HEAD
+npx github:henriksvendsgard/staff-engineer-pr-reviewer local
 
-ANTHROPIC_API_KEY=sk-ant-... \
-AZURE_DEVOPS_PAT=your-pat \
-AZURE_DEVOPS_ORG=my-org \
-AZURE_DEVOPS_PROJECT=my-project \
-AZURE_DEVOPS_REPO_ID=my-repo \
-AZURE_DEVOPS_PR_ID=42 \
-node dist/azure/src/reviewer.js
+# a specific commit or ref
+npx github:henriksvendsgard/staff-engineer-pr-reviewer local HEAD~1
 ```
+
+The local CLI reads `ANTHROPIC_API_KEY` from your environment (or a `.env` / `.env.local` in cwd) and prints the review to stdout — useful for previewing what the bot would say before pushing.
+
+## Versioning model
+
+There is no version pinning as of now. Coming later with npm packaging. Every consumer always installs from the default branch of the reviewer repo, so all projects move forward in lockstep.
+
+- **Rolling out a change**: push to the default branch. The next PR build in every consumer picks it up.
+- **Staging a change**: change the reviewer repo's default branch in GitHub settings (for example to `develop`) while you test. Consumers automatically follow. Switch back to `main` when ready.
+
+This trades release ceremony for simplicity. If you ever want fine-grained pinning (per-consumer tags, blue/green releases), see the `PACKAGE_REF` constant in `src/cli/templates.ts` and reintroduce a `versionPin` field on the template options.
+
+## Configuration
+
+| Variable             | Description                                                                                                                                                                                                                                                                                                 |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ANTHROPIC_API_KEY`  | **Required.** Your Anthropic API key.                                                                                                                                                                                                                                                                       |
+| `ANTHROPIC_MODEL`    | The model to use. Defaults to `claude-haiku-4-5-20251001`.                                                                                                                                                                                                                                                  |
+| `ANTHROPIC_THINKING` | Control the thinking budget. Set to `false`, `off`, `0` to disable (default), or a number (e.g. `2048`, `4096`) to enable with a specific token budget (minimum `1024`, defaults to `2048` if non-numeric/invalid). When thinking is enabled, the API request temperature is automatically locked to `1.0`. |
+
+### Overriding model or thinking budget per repo
+
+The generated GitHub workflow forwards `ANTHROPIC_MODEL` and `ANTHROPIC_THINKING` from **repository variables** (Settings → Secrets and variables → Actions → Variables tab). Set them there to override the defaults without touching the workflow file — leave them unset to fall back to the values baked into the reviewer.
+
+The generated Azure pipeline forwards the same two variables from **pipeline variables** (Pipelines → Library, or pipeline-level variables in the UI). The template declares empty top-level defaults so unresolved overrides become an empty string instead of the literal macro `$(ANTHROPIC_MODEL)`, which would otherwise blow up the Anthropic client.
+
+Examples:
+
+- Use Opus on the PRs that touch your security-critical repo: set `ANTHROPIC_MODEL = claude-opus-4-5-20250929` as a repo/pipeline variable.
+- Enable thinking with a 4096-token budget: set `ANTHROPIC_THINKING = 4096`.
+
+To adjust the core prompt rules, check [`src/lib/core/prompt.ts`](src/lib/core/prompt.ts).
 
 ## Development
 
@@ -139,11 +183,8 @@ node dist/azure/src/reviewer.js
 npm install
 npm run build        # compile once
 npm run build:watch  # watch mode
+npm test             # run tests
 npx tsc --noEmit     # type-check only
 ```
 
-Compiled output goes to `dist/`, mirroring the source layout.
-
-## Model
-
-Uses `claude-opus-4-7` with an 8 192-token output budget. To switch models or adjust the prompt, edit `shared/prompt.ts`.
+Compiled output goes to `dist/`, mirroring the source layout. The published npm package only ships the compiled `dist/` directory.
