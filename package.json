@@ -12,7 +12,8 @@
     "lint:fix": "eslint src tests --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "review:commit": "tsx src/reviewers/local.ts"
+    "review:commit": "tsx src/reviewers/local.ts",
+    "prepare": "husky"
   },
   "dependencies": {
     "@actions/core": "^1.10.1",
@@ -23,6 +24,15 @@
     "simple-git": "^3.36.0",
     "tsconfig-paths": "^4.2.0"
   },
+  "lint-staged": {
+    "**/*.{ts,js}": [
+      "prettier --write",
+      "jest --findRelatedTests --passWithNoTests"
+    ],
+    "**/*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  },
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "@types/node": "^20.0.0",
@@ -30,7 +40,9 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-import-resolver-typescript": "^4.4.4",
     "eslint-plugin-import": "^2.32.0",
+    "husky": "^9.1.7",
     "jest": "^30.4.2",
+    "lint-staged": "^17.0.5",
     "prettier": "^3.8.3",
     "ts-jest": "^29.4.10",
     "tsx": "^4.22.3",
