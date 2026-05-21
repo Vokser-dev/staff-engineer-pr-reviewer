@@ -17,11 +17,10 @@ Focused review of **changed lines only** — high signal, low noise. Reviews are
 **Review output:**
 
 1. Sammendrag (2–3 setninger)
-2. Kritiske funn (hvis noen)
-3. Alvorlige funn (hvis noen; utelates når tom)
-4. Konklusjon: **GODKJENN** · **BE OM ENDRINGER** · **BLOKKER**
+2. Funn (med alvorlighetsgrad: critical, major, minor)
+3. Konklusjon: **GODKJENN** · **GODKJENN MED SMÅTING** · **BE OM ENDRINGER** · **BLOKKER**
 
-Azure also posts up to 8 **inline** comments on critical/major items in the diff.
+Both platforms post up to 8 **inline** comments on critical/major/minor items in the diff. GitHub uses a formal review (`pulls.createReview`) with an event mapped from the verdict; Azure posts inline thread comments.
 
 ## GitHub Actions
 
