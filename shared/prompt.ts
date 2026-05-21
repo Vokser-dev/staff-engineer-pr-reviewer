@@ -143,6 +143,8 @@ For hvert funn, bruk dette formatet:
 
 Hvis det ikke finnes relevante funn: **Ingen funn.**
 
+**Ikke "tenk høyt" i utdataet.** Hvis du under vurderingen kommer til at noe likevel ikke er et reelt funn, skal du **ikke** inkludere det i listen — heller ikke som "trukket tilbake", "ved nærmere ettersyn er dette greit" eller lignende. Bare ta med funn du står inne for.
+
 ### Konklusjon
 Én av: **GODKJENN** · **GODKJENN MED SMÅTING** · **BE OM ENDRINGER** · **BLOKKER**
 
@@ -192,6 +194,7 @@ Regler:
 - Lag \`inlineComments\` bare når kommentaren peker på et konkret problem på akkurat denne linjen.
 - Kommentaren skal forklare hva som er galt og foreslå en konkret fiks.
 - Ikke lag \`inlineComments\` for generelle observasjoner.
+- Inkluder kun funn du står inne for. Hvis du er usikker, eller har vurdert og forkastet et funn underveis, skal det **ikke** med i \`inlineComments\` — verken som advarsel, "trukket tilbake" eller "ved nærmere ettersyn".
 - Hvis problemet ikke kan knyttes til en ny eller endret linje, ikke inkluder det.
 - Inline kun for konkrete problemer i diffen: sikkerhet, korrekthetsfeil, feilsøkingslogging i produksjonskode, hardkodede brukervendte tekster, manglende validering/fallback, eller ny kode som er så uklar at den lett kan føre til feil.
 - Alt må være direkte forårsaket av diffen.
@@ -271,7 +274,7 @@ function parseInlineCommentsPayload(jsonText: string): {
 	inlineComments: ReviewComment[];
 } {
 	const parsed = JSON.parse(jsonText) as {
-		overallVerdict?: "approve" | "comment" | "request-changes";
+		overallVerdict?: unknown;
 		inlineComments?: Array<{
 			file?: string;
 			line?: number;
@@ -281,9 +284,13 @@ function parseInlineCommentsPayload(jsonText: string): {
 	};
 
 	const verdicts = new Set(["approve", "comment", "request-changes"]);
+	const normalizedVerdict =
+		typeof parsed.overallVerdict === "string"
+			? parsed.overallVerdict.toLowerCase()
+			: undefined;
 	const overallVerdict =
-		parsed.overallVerdict && verdicts.has(parsed.overallVerdict)
-			? parsed.overallVerdict
+		normalizedVerdict && verdicts.has(normalizedVerdict)
+			? (normalizedVerdict as "approve" | "comment" | "request-changes")
 			: undefined;
 
 	const inlineSeverities = new Set(["critical", "major", "minor", "nit"]);
