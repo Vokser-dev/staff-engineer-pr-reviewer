@@ -173,10 +173,12 @@ Etter konklusjonen, legg til **én** JSON-kodeblokk og ingenting etter den. Blok
 Regler:
 - \`file\`: sti slik den vises i diff-headerene (repo-relativ, skråstrek fremover, ingen ledende skråstrek).
 - \`line\`: linjenummer i filen **etter endring** på en **lagt til eller endret** linje. Avled dette fra diffens \`@@\`-hunk-headere (\`+start,count\`).
-- \`severity\`: kun \`critical\`, \`major\` eller \`minor\`.
+- \`severity\`: kun \`critical\`, \`major\`, \`minor\` eller \`nit\`.
 - Bruk \`critical\` kun for blokkerende sikkerhet, datatap eller sikker produksjonsfeil.
 - Bruk \`major\` for konkrete korrekthetsproblemer som bør fikses før eller rett etter merge.
 - Bruk \`minor\` kun for konkrete, handlingsorienterte problemer i diffen som ikke blokkerer merge, for eksempel debug-logging, hardkodede brukervendte tekster, manglende enkel fallback eller tydelig forvirrende ny kode.
+- Bruk \`nit\` kun for små forbedringer som øker lesbarhet eller vedlikeholdbarhet uten å påvirke korrekthet eller risiko.
+- \`nit\` skal aldri blokkere merge.
 - Ikke bruk \`inlineComments\` for rene preferanser, stil, hypotetiske problemer eller generelle forbedringsforslag.
 - Lag \`inlineComments\` bare når kommentaren peker på et konkret problem på akkurat denne linjen.
 - Kommentaren skal forklare hva som er galt og foreslå en konkret fiks.
@@ -265,7 +267,7 @@ function parseInlineCommentsPayload(jsonText: string): ReviewComment[] {
 		}>;
 	};
 
-	const inlineSeverities = new Set(["critical", "major", "minor"]);
+	const inlineSeverities = new Set(["critical", "major", "minor", "nit"]);
 	const inlineComments: ReviewComment[] = [];
 
 	for (const raw of parsed.inlineComments ?? []) {
