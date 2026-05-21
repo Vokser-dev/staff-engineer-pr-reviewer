@@ -143,6 +143,18 @@ function verdictToEvent(
 	}
 }
 
+/** Fallback used when Claude's `overallVerdict` is missing or invalid.
+ *  Mirrors the consistency rule from the prompt: any critical/major inline
+ *  comment implies REQUEST_CHANGES, otherwise COMMENT. */
+function deriveEventFromComments(
+	comments: AnchoredReviewComment[],
+): ReviewEvent {
+	const blocksMerge = comments.some(
+		(c) => c.severity === "critical" || c.severity === "major",
+	);
+	return blocksMerge ? "REQUEST_CHANGES" : "COMMENT";
+}
+
 async function postReview(
 	octokit: ReturnType<typeof github.getOctokit>,
 	owner: string,
@@ -230,15 +242,19 @@ async function run(): Promise<void> {
 	const { markdown, inlineComments, overallVerdict } =
 		splitReviewResponse(reviewText);
 
-	if (overallVerdict === undefined) {
-		core.warning(
-			"Could not parse overallVerdict from Claude's response (missing or invalid JSON block). Defaulting review event to COMMENT.",
-		);
-	}
-
 	const linesIndex = buildAddedLinesIndex(prContext.files);
 	const filteredComments = filterInlineComments(inlineComments, linesIndex);
-	const event = verdictToEvent(overallVerdict);
+
+	const event =
+		overallVerdict !== undefined
+			? verdictToEvent(overallVerdict)
+			: deriveEventFromComments(filteredComments);
+
+	if (overallVerdict === undefined) {
+		core.warning(
+			`Could not parse overallVerdict from Claude's response (missing or invalid JSON block). Derived event from inline severities: ${event}.`,
+		);
+	}
 
 	core.info(
 		`Posting review (event=${event}) with ${filteredComments.length} inline comment(s) (${inlineComments.length} requested).`,

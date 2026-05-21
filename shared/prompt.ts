@@ -329,7 +329,7 @@ function parseInlineCommentsPayload(jsonText: string): {
 			? (normalizedVerdict as "approve" | "comment" | "request-changes")
 			: undefined;
 
-	const inlineSeverities = new Set(["critical", "major", "minor", "nit"]);
+	const inlineSeverities = new Set(["critical", "major", "minor"]);
 	const inlineComments: ReviewComment[] = [];
 
 	for (const raw of parsed.inlineComments ?? []) {
