@@ -8,7 +8,6 @@ import {
   resolveRepoPath,
 } from "@/lib/azure/pathResolver";
 import {
-  formatInlineCommentBody,
   PullRequestContext,
   PullRequestFile,
   ReviewComment,
@@ -315,10 +314,9 @@ async function postInlineComment(
 
 async function postInlineComments(
   config: AzureConfig,
-  pr: PullRequestContext,
+  changedFiles: Set<string>,
   comments: ReviewComment[],
 ): Promise<number> {
-  const changedFiles = new Set(pr.files.map((f) => f.filename));
   let posted = 0;
 
   for (const comment of comments) {
@@ -328,7 +326,7 @@ async function postInlineComments(
       continue;
     }
 
-    const body = formatInlineCommentBody(comment);
+    const body = comment.body;
 
     try {
       await postInlineComment(config, filePath, comment.line, body);
@@ -350,15 +348,19 @@ export const run: ReviewerPlugin["run"] = async (): Promise<void> => {
 
   const anthropic = new Anthropic({ apiKey: config.anthropicApiKey });
 
+  const changedFiles = new Set<string>();
+
   const host: ReviewHost = {
     async fetchContext() {
-      return getPullRequestContext(config);
+      const ctx = await getPullRequestContext(config);
+      for (const file of ctx.files) {
+        changedFiles.add(file.filename);
+      }
+      return ctx;
     },
-    async publishSummary(markdown) {
-      await postReviewSummary(config, markdown);
-    },
-    async publishInline(comments, ctx) {
-      return postInlineComments(config, ctx, comments);
+    async publishReview(summaryMarkdown, inlineComments, _verdict) {
+      await postReviewSummary(config, summaryMarkdown);
+      await postInlineComments(config, changedFiles, inlineComments);
     },
   };
 
