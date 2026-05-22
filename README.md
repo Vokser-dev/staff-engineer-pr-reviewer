@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/icon.png" alt="Staff Engineer PR Reviewer" width="160" />
+</p>
+
 # Staff Engineer PR Reviewer
 
 Automated pull request reviews powered by Claude. Drop into any GitHub or Azure DevOps repo with a single `npx` command — no checkouts, no builds, no bespoke action to maintain. Posts a structured code review (inline + summary) on every opened or updated PR.
