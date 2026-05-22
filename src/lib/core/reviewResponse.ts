@@ -33,7 +33,7 @@ function parseInlineCommentsPayload(jsonText: string): {
   const normalizedVerdict =
     typeof parsed.overallVerdict === "string" ? parsed.overallVerdict.toLowerCase() : undefined;
   const overallVerdict =
-    normalizedVerdict && verdicts.has(normalizedVerdict)
+    normalizedVerdict !== undefined && verdicts.has(normalizedVerdict)
       ? (normalizedVerdict as "approve" | "comment" | "request-changes")
       : undefined;
 
@@ -41,7 +41,14 @@ function parseInlineCommentsPayload(jsonText: string): {
   const inlineComments: ReviewComment[] = [];
 
   for (const raw of parsed.inlineComments ?? []) {
-    if (!raw.file || !raw.body || typeof raw.line !== "number") continue;
+    if (
+      raw.file == null ||
+      raw.file === "" ||
+      raw.body == null ||
+      raw.body === "" ||
+      typeof raw.line !== "number"
+    )
+      continue;
     if (!Number.isInteger(raw.line) || raw.line < 1) continue;
 
     const severity = (raw.severity ?? "minor").toLowerCase();
@@ -74,7 +81,7 @@ export function parseReviewResponse(text: string): {
   let inlineComments: ReviewComment[] = [];
   let overallVerdict: "approve" | "comment" | "request-changes" | undefined;
 
-  if (lastMatch) {
+  if (lastMatch != null) {
     try {
       const payload = parseInlineCommentsPayload(lastMatch[1].trim());
       overallVerdict = payload.overallVerdict;

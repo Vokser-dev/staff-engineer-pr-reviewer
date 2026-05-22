@@ -14,6 +14,8 @@ npx tsc --noEmit     # type-check without emitting
 
 We use Jest for unit tests, with tests located in the top-level `tests/` directory.
 
+**IMPORTANT**: Any refactoring or new code should be followed by linting and testing. Any error or warning should be fixed.
+
 The codebase is structured as follows:
 
 **`src/lib/`** — shared business logic and platform-specific helpers.
@@ -30,9 +32,15 @@ The codebase is structured as follows:
 
 **`src/reviewers/azure.ts`** — Azure DevOps entrypoint. Reads config from env vars. Uses `fetch` against the ADO REST API. Posts a summary PR thread plus inline line comments via `/threads`.
 
-**`src/reviewers/local.ts`** — local CLI entrypoint. Uses `simple-git` to build a `PullRequestContext` from uncommitted changes or a specific commit, then prints the review to stdout. No platform API calls.
+**`src/reviewers/local.ts`** — local CLI entrypoint. Uses `simple-git` to build a `PullRequestContext` from uncommitted changes or a specific commit, then renders the review via `@clack/prompts` (intro/outro, spinner, `p.note` blocks for the summary and inline comments). No platform API calls.
 
-**`src/cli/index.ts`** — CLI dispatcher (the package's `bin`). Parses the first argv token and dispatches to `init`, `doctor`, `github`, `azure`, or `local`. Each platform reviewer is lazy-imported so that running `init` or `doctor` doesn't pull in `@actions/core` and friends. Always exits non-zero on errors.
+**`src/cli/index.ts`** — CLI dispatcher (the package's `bin`). Built with [`citty`](https://github.com/unjs/citty): defines `init`, `doctor`, `github`, `azure`, and `local` as subcommands and routes the trailing args. Each platform reviewer is lazy-imported so that running `init` or `doctor` doesn't pull in `@actions/core` and friends. Always exits non-zero on errors.
+
+## CLI I/O conventions
+
+- **Argument parsing** is done exclusively via `citty` (`defineCommand` + `runMain`). No manual `process.argv` slicing in subcommand code — only as a `process.argv.slice(2)` default for direct-node invocation of `local.ts`.
+- **Interactive output for user-facing commands** (`init`, `doctor`, `local`) goes through `@clack/prompts`: `p.intro` / `p.outro`, `p.log.{step,info,success,warn,error}`, `p.spinner`, `p.note`, `p.select`, `p.text`, `p.group`. No raw `console.log` / `console.error` / `process.stdout.write` in these paths.
+- **CI reviewers** (`github`, `azure`) deliberately do NOT use clack — clack is interactive-terminal UI. The GitHub reviewer logs through `@actions/core` (`core.info`, `core.warning`, `core.setFailed`); the Azure reviewer logs through plain `console.{log,warn,error}` because Azure Pipelines captures stdout/stderr and has no Actions-style log API.
 
 **`src/cli/detect.ts`** — best-effort detection of the consumer's CI platform by looking for marker paths (`.github/workflows`, `azure-pipelines.yml`, etc.). Returns both the list of detected platforms and the unique platform if exactly one was found.
 

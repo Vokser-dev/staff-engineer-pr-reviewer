@@ -1,7 +1,10 @@
-import { simpleGit } from "simple-git";
-import Anthropic from "@anthropic-ai/sdk";
-import * as dotenv from "dotenv";
 import * as fs from "fs";
+
+import Anthropic from "@anthropic-ai/sdk";
+import * as p from "@clack/prompts";
+import * as dotenv from "dotenv";
+import { simpleGit } from "simple-git";
+
 import { PullRequestContext, PullRequestFile, reviewPullRequest } from "@/lib/index";
 
 // Load environment variables
@@ -19,15 +22,24 @@ dotenv.config({ path: envPath });
  *   ("local") isn't mistaken for a SHA.
  */
 export async function run(args: string[] = process.argv.slice(2)): Promise<void> {
+  p.intro("Staff Engineer PR Reviewer — local");
+
   const git = simpleGit();
   const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
-  if (!anthropicApiKey) {
-    console.error("Error: ANTHROPIC_API_KEY environment variable is not set.");
-    console.error("Please set it in your environment or in a .env file.");
+  if (anthropicApiKey == null || anthropicApiKey === "") {
+    p.log.error("ANTHROPIC_API_KEY environment variable is not set.");
+    p.log.info("Set it in your environment or in a .env / .env.local file.");
+    p.outro("Aborted.");
     process.exit(1);
   }
 
-  const isUncommitted = !args[0];
+  if (args[0] === "") {
+    p.log.error("Empty string is not a valid git revision or SHA.");
+    p.outro("Aborted.");
+    process.exit(1);
+  }
+
+  const isUncommitted = args[0] == null;
   let commitSha = "";
   let base = "HEAD";
   let author = "Local User";
@@ -37,14 +49,12 @@ export async function run(args: string[] = process.argv.slice(2)): Promise<void>
   let baseBranch = "HEAD";
 
   if (isUncommitted) {
-    console.log(
-      "No commit SHA specified. Running code review on current uncommitted changes relative to HEAD.",
-    );
+    p.log.step("No commit SHA specified — reviewing uncommitted changes relative to HEAD.");
     try {
       const name = (await git.raw(["config", "user.name"])).trim();
       const email = (await git.raw(["config", "user.email"])).trim();
-      if (name) {
-        author = `${name} ${email ? `<${email}>` : ""}`.trim();
+      if (name !== "") {
+        author = `${name} ${email !== "" ? `<${email}>` : ""}`.trim();
       }
     } catch {
       // Use fallback
@@ -59,11 +69,12 @@ export async function run(args: string[] = process.argv.slice(2)): Promise<void>
     try {
       commitSha = (await git.raw(["rev-parse", "--verify", rawSha])).trim();
     } catch {
-      console.error(`Error: Invalid git revision or SHA: "${rawSha}"`);
+      p.log.error(`Invalid git revision or SHA: "${rawSha}"`);
+      p.outro("Aborted.");
       process.exit(1);
     }
 
-    console.log(`Running code review for commit: ${commitSha}`);
+    p.log.step(`Reviewing commit: ${commitSha}`);
 
     // Fetch parent revision to compute the diff against
     try {
@@ -74,7 +85,8 @@ export async function run(args: string[] = process.argv.slice(2)): Promise<void>
       const isRoot = parents.length === 1;
       base = isRoot ? "4b825dc642cb6eb9a0accbf1240487182c04b2c4" : `${commitSha}~1`;
     } catch (err) {
-      console.error(`Error retrieving git parents for commit ${commitSha}:`, err);
+      p.log.error(`Failed to retrieve git parents for ${commitSha}: ${String(err)}`);
+      p.outro("Aborted.");
       process.exit(1);
     }
 
@@ -84,7 +96,7 @@ export async function run(args: string[] = process.argv.slice(2)): Promise<void>
       title = (await git.raw(["show", "-s", "--format=%s", commitSha])).trim();
       description = (await git.raw(["show", "-s", "--format=%b", commitSha])).trim();
     } catch {
-      console.warn("Warning: Failed to retrieve commit metadata from git. Using fallback values.");
+      p.log.warn("Failed to retrieve commit metadata from git. Using fallback values.");
     }
 
     baseBranch = base.substring(0, 7);
@@ -100,10 +112,8 @@ export async function run(args: string[] = process.argv.slice(2)): Promise<void>
 
     const statusOutput = (await git.raw(statusArgs)).trim();
 
-    if (!statusOutput) {
-      console.log(
-        isUncommitted ? "No uncommitted changes found." : "No changed files in this commit.",
-      );
+    if (statusOutput === "") {
+      p.outro(isUncommitted ? "No uncommitted changes found." : "No changed files in this commit.");
       return;
     }
 
@@ -136,10 +146,12 @@ export async function run(args: string[] = process.argv.slice(2)): Promise<void>
           ? ["diff", "--numstat", "HEAD", "--", filename]
           : ["diff", "--numstat", base, commitSha, "--", filename];
         const numstatOutput = (await git.raw(numstatArgs)).trim();
-        if (numstatOutput) {
+        if (numstatOutput !== "") {
           const numParts = numstatOutput.split(/\s+/);
-          additions = parseInt(numParts[0], 10) || 0;
-          deletions = parseInt(numParts[1], 10) || 0;
+          const parsedAdditions = parseInt(numParts[0], 10);
+          const parsedDeletions = parseInt(numParts[1], 10);
+          additions = Number.isNaN(parsedAdditions) ? 0 : parsedAdditions;
+          deletions = Number.isNaN(parsedDeletions) ? 0 : parsedDeletions;
         }
       } catch {
         // Fallback or binary file (which shows '-' in numstat)
@@ -153,7 +165,7 @@ export async function run(args: string[] = process.argv.slice(2)): Promise<void>
           : ["diff", base, commitSha, "--", filename];
         patch = await git.raw(patchArgs);
       } catch {
-        console.warn(`Warning: Could not fetch patch for ${filename}`);
+        p.log.warn(`Could not fetch patch for ${filename}`);
       }
 
       files.push({
@@ -165,7 +177,8 @@ export async function run(args: string[] = process.argv.slice(2)): Promise<void>
       });
     }
   } catch (err) {
-    console.error("Error retrieving changed files from git:", err);
+    p.log.error(`Failed to retrieve changed files from git: ${String(err)}`);
+    p.outro("Aborted.");
     process.exit(1);
   }
 
@@ -178,10 +191,12 @@ export async function run(args: string[] = process.argv.slice(2)): Promise<void>
     files,
   };
 
-  console.log(
+  const fileCount = `${files.length} endret(e) fil(er)`;
+  const spinner = p.spinner();
+  spinner.start(
     isUncommitted
-      ? `Endringssettet har ${files.length} endret(e) fil(er). Sender til Claude...`
-      : `Commit-en har ${files.length} endret(e) fil(er). Sender til Claude...`,
+      ? `Endringssettet har ${fileCount}. Sender til Claude...`
+      : `Commit-en har ${fileCount}. Sender til Claude...`,
   );
 
   const anthropic = new Anthropic({ apiKey: anthropicApiKey });
@@ -192,39 +207,31 @@ export async function run(args: string[] = process.argv.slice(2)): Promise<void>
       prContext,
       { inline: true },
     );
+    spinner.stop("Review mottatt.");
 
-    console.log("\n========================================================");
-    console.log("                  SAMMENDRAG AV REVIEW                  ");
-    console.log("========================================================\n");
-    console.log(markdown);
+    p.note(markdown, "Sammendrag av review");
 
-    console.log("\n========================================================");
-    console.log("                   INLINE-KOMMENTARER                   ");
-    console.log("========================================================\n");
-
-    if (inlineComments && inlineComments.length > 0) {
-      for (const comment of inlineComments) {
-        const severityStr = comment.severity.toUpperCase();
-        console.log(`📌 Fil:              ${comment.filename}:${comment.line ?? "N/A"}`);
-        console.log(`   Alvorlighetsgrad: ${severityStr}`);
-        console.log(`   Kommentar:        ${comment.body}`);
-        console.log("--------------------------------------------------------");
-      }
+    if (inlineComments != null && inlineComments.length > 0) {
+      const body = inlineComments
+        .map((c) => `${c.filename}:${c.line ?? "N/A"}  [${c.severity.toUpperCase()}]\n${c.body}`)
+        .join("\n\n");
+      p.note(body, "Inline-kommentarer");
     } else {
-      console.log("Ingen inline-kommentarer funnet.");
+      p.log.info("Ingen inline-kommentarer funnet.");
     }
 
-    console.log(`\nSamlet vurdering: ${overallVerdict?.toUpperCase() ?? "UKJENT"}`);
-    console.log("========================================================\n");
+    p.outro(`Samlet vurdering: ${overallVerdict?.toUpperCase() ?? "UKJENT"}`);
   } catch (err) {
-    console.error("Feil ved kall til Anthropic API eller parsing av svar:", err);
+    spinner.stop("Review feilet.");
+    p.log.error(`Feil ved kall til Anthropic API eller parsing av svar: ${String(err)}`);
+    p.outro("Aborted.");
     process.exit(1);
   }
 }
 
 if (require.main === module) {
   run().catch((err: Error) => {
-    console.error("Fatal error:", err.message);
+    p.log.error(`Fatal error: ${err.message}`);
     process.exit(1);
   });
 }

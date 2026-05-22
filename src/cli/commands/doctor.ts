@@ -1,6 +1,9 @@
 import * as fs from "fs";
 import * as path from "path";
 
+import * as p from "@clack/prompts";
+import { defineCommand } from "citty";
+
 import { detectPlatforms, PLATFORM_OUTPUT_PATHS } from "@/cli/detect";
 
 type CheckStatus = "ok" | "warn" | "fail" | "info";
@@ -17,13 +20,6 @@ const PACKAGE_REF = "github:henriksvendsgard/staff-engineer-pr-reviewer";
  *  dependency (uncommon for CI tools, but possible). */
 const PACKAGE_NPM_NAME = "@henriksvendsgard/staff-engineer-pr-reviewer";
 
-const STATUS_GLYPH: Record<CheckStatus, string> = {
-  ok: "\u001b[32m✓\u001b[0m",
-  warn: "\u001b[33m⚠\u001b[0m",
-  fail: "\u001b[31m✗\u001b[0m",
-  info: "\u001b[36mi\u001b[0m",
-};
-
 function readIfExists(filePath: string): string | null {
   try {
     return fs.readFileSync(filePath, "utf-8");
@@ -34,7 +30,7 @@ function readIfExists(filePath: string): string | null {
 
 function checkWorkflowFile(filePath: string, packageName: string): CheckResult {
   const content = readIfExists(filePath);
-  if (!content) {
+  if (content == null) {
     return {
       status: "fail",
       message: `Workflow file missing: ${filePath}`,
@@ -53,7 +49,7 @@ function checkWorkflowFile(filePath: string, packageName: string): CheckResult {
 
 function checkGithubPermissions(filePath: string): CheckResult {
   const content = readIfExists(filePath);
-  if (!content) {
+  if (content == null) {
     return {
       status: "info",
       message: "Skipped permission check (no workflow file).",
@@ -66,13 +62,13 @@ function checkGithubPermissions(filePath: string): CheckResult {
   return {
     status: "warn",
     message: "Workflow does not explicitly grant pull-requests: write",
-    hint: "Add this block at the workflow or job level:\n        permissions:\n          contents: read\n          pull-requests: write",
+    hint: "Add this block at the workflow or job level:\npermissions:\n  contents: read\n  pull-requests: write",
   };
 }
 
 function checkAzureVars(filePath: string): CheckResult {
   const content = readIfExists(filePath);
-  if (!content) {
+  if (content == null) {
     return { status: "info", message: "Skipped variable check (no pipeline file)." };
   }
   const missing: string[] = [];
@@ -80,7 +76,7 @@ function checkAzureVars(filePath: string): CheckResult {
     const re = new RegExp(`${v}:\\s*(<.+>|REPLACE|REPLACE_ME|REPLACE-ME)$`, "m");
     if (re.test(content)) missing.push(v);
   }
-  if (missing.length) {
+  if (missing.length > 0) {
     return {
       status: "warn",
       message: `These pipeline env vars look like placeholders: ${missing.join(", ")}`,
@@ -95,7 +91,7 @@ function checkNoNodeModulesPolicy(): CheckResult {
   // appears to have copied the source instead of using the published package.
   const pkgPath = path.join(process.cwd(), "package.json");
   const pkg = readIfExists(pkgPath);
-  if (!pkg)
+  if (pkg == null)
     return { status: "info", message: "No package.json in this project — OK for CI-only usage." };
 
   try {
@@ -121,24 +117,38 @@ function checkNoNodeModulesPolicy(): CheckResult {
 }
 
 function printSection(title: string): void {
-  console.log(`\n${title}`);
-  console.log("─".repeat(title.length));
+  p.log.step(title);
 }
 
 function printCheck(result: CheckResult): void {
-  console.log(`  ${STATUS_GLYPH[result.status]} ${result.message}`);
-  if (result.hint) {
-    const lines = result.hint.split("\n");
-    for (const line of lines) {
-      console.log(`      ${"\u001b[2m"}${line}${"\u001b[0m"}`);
-    }
+  const msg =
+    result.hint !== undefined && result.hint !== ""
+      ? `${result.message}\n${result.hint
+          .split("\n")
+          .map((line) => `  ${line}`)
+          .join("\n")}`
+      : result.message;
+
+  switch (result.status) {
+    case "ok":
+      p.log.success(msg);
+      break;
+    case "warn":
+      p.log.warn(msg);
+      break;
+    case "fail":
+      p.log.error(msg);
+      break;
+    case "info":
+      p.log.info(msg);
+      break;
   }
 }
 
-export function runDoctor(_args: string[]): void {
-  console.log("Staff Engineer PR Reviewer — setup check");
+export function runDoctor(): void {
+  p.intro("Staff Engineer PR Reviewer — setup check");
   const cwd = process.cwd();
-  console.log(`\nChecking ${cwd}`);
+  p.log.info(`Checking ${cwd}`);
 
   const detection = detectPlatforms(cwd);
   const results: { section: string; checks: CheckResult[] }[] = [];
@@ -197,15 +207,22 @@ export function runDoctor(_args: string[]): void {
   const fails = allChecks.filter((c) => c.status === "fail").length;
   const warns = allChecks.filter((c) => c.status === "warn").length;
 
-  console.log("");
   if (fails === 0 && warns === 0) {
-    console.log(`${STATUS_GLYPH.ok} Setup looks healthy.`);
+    p.outro("Setup looks healthy.");
   } else if (fails === 0) {
-    console.log(`${STATUS_GLYPH.warn} Setup mostly OK, but ${warns} warning(s) to review.`);
+    p.outro(`Setup mostly OK, but ${warns} warning(s) to review.`);
   } else {
-    console.log(
-      `${STATUS_GLYPH.fail} Setup has ${fails} blocking issue(s) and ${warns} warning(s).`,
-    );
+    p.outro(`Setup has ${fails} blocking issue(s) and ${warns} warning(s).`);
     process.exitCode = 1;
   }
 }
+
+export default defineCommand({
+  meta: {
+    description:
+      "Check that the reviewer is correctly set up in this project and report what's missing",
+  },
+  run: () => {
+    runDoctor();
+  },
+});
