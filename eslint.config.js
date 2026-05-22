@@ -52,6 +52,7 @@ module.exports = tseslint.config(
       "@typescript-eslint/no-floating-promises": "error",
       "@typescript-eslint/await-thenable": "error",
       "@typescript-eslint/no-misused-promises": "error",
+      "@typescript-eslint/no-unsafe-return": "error",
 
       // Tier 1: general hygiene
       eqeqeq: ["error", "smart"],
