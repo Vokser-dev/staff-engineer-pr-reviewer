@@ -238,7 +238,7 @@ describe("Review Session Orchestrator", () => {
       expect(published[0].verdict).toBe("request-changes");
     });
 
-    it("should derive request-changes from original comments even if they are filtered out due to not being on diff lines", async () => {
+    it("should derive verdict from filtered comments so off-diff comments do not block merge", async () => {
       const published: { markdown: string; comments: ReviewComment[]; verdict: string }[] = [];
       const host: ReviewHost = {
         fetchContext() {
@@ -271,8 +271,9 @@ describe("Review Session Orchestrator", () => {
       expect(published).toHaveLength(1);
       // Inline comments should be filtered out (empty)
       expect(published[0].comments).toHaveLength(0);
-      // But verdict should still be request-changes because the original comment was critical
-      expect(published[0].verdict).toBe("request-changes");
+      // Verdict should be approve: no published comments means nothing to act on,
+      // so the original off-diff critical should not block merge.
+      expect(published[0].verdict).toBe("approve");
 
       warnSpy.mockRestore();
     });

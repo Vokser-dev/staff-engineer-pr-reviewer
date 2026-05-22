@@ -110,7 +110,7 @@ export async function runReviewSession(
 
   let verdict = overallVerdict;
   if (verdict == null) {
-    verdict = deriveVerdictFromComments(inlineComments ?? []);
+    verdict = deriveVerdictFromComments(filteredComments);
     console.warn(
       `overallVerdict was not provided in the response. Derived verdict from inline severities: ${verdict}.`,
     );
