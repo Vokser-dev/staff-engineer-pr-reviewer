@@ -1,3 +1,13 @@
+import { createTwoFilesPatch } from "diff";
+
+import { PullRequestFile } from "@/lib/types";
+
+export interface AzureDiffChange {
+  item: { path: string; isFolder?: boolean; gitObjectType?: string };
+  changeType: string;
+  originalPath?: string;
+}
+
 export function stripRef(ref: string): string {
   return ref.replace(/^refs\/heads\//, "");
 }
@@ -35,4 +45,87 @@ export function resolveRepoPath(filename: string, changedFiles: Set<string>): st
     }
   }
   return undefined;
+}
+
+export function buildFilePatch(
+  oldPath: string,
+  newPath: string,
+  oldContent: string,
+  newContent: string,
+): string | undefined {
+  const patch = createTwoFilesPatch(oldPath, newPath, oldContent, newContent, "", "", {
+    context: 3,
+  });
+  const hasChanges = patch.split("\n").some((l) => l.startsWith("+") || l.startsWith("-"));
+  return hasChanges ? patch : undefined;
+}
+
+export async function parseAzureDiff(
+  changes: AzureDiffChange[],
+  sourceCommitId: string,
+  targetCommitId: string,
+  retrieveFileContent: (path: string, commitId: string) => Promise<string | undefined>,
+): Promise<PullRequestFile[]> {
+  const blobChanges = changes.filter(
+    (c) => c.item.isFolder !== true && c.item.gitObjectType !== "tree",
+  );
+
+  const files: PullRequestFile[] = await Promise.all(
+    blobChanges.map(async (change) => {
+      const status = changeTypeLabel(change.changeType);
+      const filename = change.item.path;
+
+      if (status === "added") {
+        const content = await retrieveFileContent(filename, sourceCommitId);
+        const patch =
+          content != null ? buildFilePatch("/dev/null", filename, "", content) : undefined;
+        return {
+          filename,
+          status,
+          additions: content != null ? content.split("\n").length : 0,
+          deletions: 0,
+          patch,
+        };
+      }
+
+      if (status === "removed") {
+        const content = await retrieveFileContent(filename, targetCommitId);
+        const patch =
+          content != null ? buildFilePatch(filename, "/dev/null", content, "") : undefined;
+        return {
+          filename,
+          status,
+          additions: 0,
+          deletions: content != null ? content.split("\n").length : 0,
+          patch,
+        };
+      }
+
+      const [oldContent, newContent] = await Promise.all([
+        retrieveFileContent(change.originalPath ?? filename, targetCommitId),
+        retrieveFileContent(filename, sourceCommitId),
+      ]);
+
+      let additions = 0;
+      let deletions = 0;
+      let patch: string | undefined;
+
+      if (oldContent !== undefined && newContent !== undefined) {
+        patch = buildFilePatch(change.originalPath ?? filename, filename, oldContent, newContent);
+        if (patch != null) {
+          ({ additions, deletions } = statsFromPatch(patch));
+        }
+      }
+
+      return {
+        filename,
+        status,
+        additions,
+        deletions,
+        patch,
+      };
+    }),
+  );
+
+  return files;
 }

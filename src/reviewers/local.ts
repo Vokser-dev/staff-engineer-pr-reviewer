@@ -4,15 +4,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import * as dotenv from "dotenv";
 import { simpleGit } from "simple-git";
 
-import {
-  PullRequestContext,
-  PullRequestFile,
-  ReviewComment,
-  reviewPullRequest,
-  ReviewHost,
-  ReviewFunction,
-  runReviewSession,
-} from "@/lib/index";
+import { reviewPullRequest, ReviewHost, ReviewFunction, runReviewSession } from "@/lib/index";
+import { PullRequestContext, PullRequestFile, ReviewComment } from "@/lib/types";
 
 // Load environment variables
 const envPath = fs.existsSync(".env.local") ? ".env.local" : ".env";

@@ -1,13 +1,13 @@
-import { PullRequestContext, ReviewComment } from "@/lib/core/prompt";
+import { deriveVerdictFromComments } from "@/lib/core/reviewResponse";
 import {
   extractAddedLines,
   buildAddedLinesIndex,
   filterInlineComments,
-  deriveVerdictFromComments,
   runReviewSession,
   ReviewHost,
   ReviewFunction,
 } from "@/lib/core/reviewSession";
+import { PullRequestContext, ReviewComment } from "@/lib/types";
 
 describe("Review Session Orchestrator", () => {
   let mockContext: PullRequestContext;
@@ -114,22 +114,15 @@ describe("Review Session Orchestrator", () => {
     });
 
     it("should return comment if only minor comments", () => {
-      expect(
-        deriveVerdictFromComments([{ filename: "a.ts", line: 1, severity: "minor", body: "x" }]),
-      ).toBe("comment");
+      expect(deriveVerdictFromComments([{ severity: "minor" }])).toBe("comment");
     });
 
     it("should return request-changes if critical or major comments exist", () => {
-      expect(
-        deriveVerdictFromComments([
-          { filename: "a.ts", line: 1, severity: "minor", body: "x" },
-          { filename: "b.ts", line: 2, severity: "major", body: "y" },
-        ]),
-      ).toBe("request-changes");
+      expect(deriveVerdictFromComments([{ severity: "minor" }, { severity: "major" }])).toBe(
+        "request-changes",
+      );
 
-      expect(
-        deriveVerdictFromComments([{ filename: "a.ts", line: 1, severity: "critical", body: "x" }]),
-      ).toBe("request-changes");
+      expect(deriveVerdictFromComments([{ severity: "critical" }])).toBe("request-changes");
     });
   });
 
@@ -205,7 +198,7 @@ describe("Review Session Orchestrator", () => {
         filename: "src/main.ts",
         line: 3,
         severity: "minor",
-        body: "**[Lav]** on-line",
+        body: "on-line",
       });
       // Verdict is derived since it was not provided in LLM response
       expect(published[0].verdict).toBe("comment");

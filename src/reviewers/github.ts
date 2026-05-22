@@ -3,15 +3,13 @@ import * as github from "@actions/github";
 import Anthropic from "@anthropic-ai/sdk";
 
 import {
-  PullRequestContext,
-  PullRequestFile,
-  ReviewComment,
   reviewPullRequest,
   ReviewerPlugin,
   ReviewHost,
   ReviewFunction,
   runReviewSession,
 } from "@/lib/index";
+import { PullRequestContext, PullRequestFile, ReviewComment, Verdict } from "@/lib/types";
 
 type ReviewEvent = "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
 
@@ -60,7 +58,7 @@ async function getPullRequestData(
   };
 }
 
-function verdictToEvent(verdict: "approve" | "comment" | "request-changes"): ReviewEvent {
+function verdictToEvent(verdict: Verdict): ReviewEvent {
   switch (verdict) {
     case "approve":
       return "APPROVE";

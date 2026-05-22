@@ -1,4 +1,52 @@
-import { ReviewComment, MAX_INLINE_COMMENTS } from "@/lib/core/prompt";
+import { InlineSeverity, ReviewComment, Severity, Verdict } from "@/lib/types";
+
+export const MAX_INLINE_COMMENTS = 8;
+
+const INLINE_SEVERITIES: readonly InlineSeverity[] = ["critical", "major", "minor"];
+const VERDICTS: readonly Verdict[] = ["approve", "comment", "request-changes"];
+
+function isInlineSeverity(value: string): value is InlineSeverity {
+  return (INLINE_SEVERITIES as readonly string[]).includes(value);
+}
+
+function isVerdict(value: string): value is Verdict {
+  return (VERDICTS as readonly string[]).includes(value);
+}
+
+export const SEVERITY_LABELS_NO: Record<Severity, string> = {
+  critical: "Kritisk",
+  major: "Alvorlig",
+  minor: "Lav",
+  nit: "Pirk",
+};
+
+// Strips any existing severity prefix the model may have inserted before we re-apply the
+// canonical one: bold-bracket (`**[...]**`), plain bracket (`[...]`), or `Label:` form.
+// The bracket forms intentionally match any content so typos and unknown labels are still removed.
+const EXISTING_SEVERITY_PREFIX =
+  /^(?:\*\*\s*\[[^\]]*\]\s*\*\*|\[[^\]]*\]|(?:Kritisk|Alvorlig|Lav|Pirk|Critical|Major|Minor|Nit|Severity)\s*:)\s*/i;
+
+export function formatInlineCommentBody(comment: { severity: Severity; body: string }): string {
+  const label = SEVERITY_LABELS_NO[comment.severity];
+  const prefix = `**[${label}]** `;
+  const cleanBody = comment.body.replace(EXISTING_SEVERITY_PREFIX, "").trim();
+  return `${prefix}${cleanBody}`;
+}
+
+export function deriveVerdictFromComments(comments: Array<{ severity: Severity }>): Verdict {
+  if (comments.length === 0) {
+    return "approve";
+  }
+  const blocksMerge = comments.some((c) => c.severity === "critical" || c.severity === "major");
+  return blocksMerge ? "request-changes" : "comment";
+}
+
+function resolveVerdict(parsedVerdict: Verdict | undefined, comments: ReviewComment[]): Verdict {
+  const derived = deriveVerdictFromComments(comments);
+  if (derived === "request-changes") return "request-changes";
+  if (parsedVerdict === undefined || parsedVerdict === "request-changes") return derived;
+  return parsedVerdict;
+}
 
 /** Matches ```json fenced blocks; closing ``` may be on the same line or after whitespace. */
 const JSON_FENCE_PATTERN = "```json\\s*\\n([\\s\\S]*?)\\s*```";
@@ -16,7 +64,7 @@ function findLastJsonFence(text: string): RegExpMatchArray | undefined {
 }
 
 function parseInlineCommentsPayload(jsonText: string): {
-  overallVerdict?: "approve" | "comment" | "request-changes";
+  overallVerdict?: Verdict;
   inlineComments: ReviewComment[];
 } {
   const parsed = JSON.parse(jsonText) as {
@@ -29,15 +77,11 @@ function parseInlineCommentsPayload(jsonText: string): {
     }>;
   };
 
-  const verdicts = new Set(["approve", "comment", "request-changes"]);
   const normalizedVerdict =
     typeof parsed.overallVerdict === "string" ? parsed.overallVerdict.toLowerCase() : undefined;
   const overallVerdict =
-    normalizedVerdict !== undefined && verdicts.has(normalizedVerdict)
-      ? (normalizedVerdict as "approve" | "comment" | "request-changes")
-      : undefined;
+    normalizedVerdict !== undefined && isVerdict(normalizedVerdict) ? normalizedVerdict : undefined;
 
-  const inlineSeverities = new Set(["critical", "major", "minor"]);
   const inlineComments: ReviewComment[] = [];
 
   for (const raw of parsed.inlineComments ?? []) {
@@ -52,13 +96,13 @@ function parseInlineCommentsPayload(jsonText: string): {
     if (!Number.isInteger(raw.line) || raw.line < 1) continue;
 
     const severity = (raw.severity ?? "minor").toLowerCase();
-    if (!inlineSeverities.has(severity)) continue;
+    if (!isInlineSeverity(severity)) continue;
 
     inlineComments.push({
       filename: raw.file.replace(/^\//, ""),
       line: raw.line,
       body: raw.body.trim(),
-      severity: severity as ReviewComment["severity"],
+      severity,
     });
 
     if (inlineComments.length >= MAX_INLINE_COMMENTS) break;
@@ -70,7 +114,7 @@ function parseInlineCommentsPayload(jsonText: string): {
 export function parseReviewResponse(text: string): {
   markdown: string;
   inlineComments: ReviewComment[];
-  overallVerdict?: "approve" | "comment" | "request-changes";
+  overallVerdict: Verdict;
 } {
   const trimmed = text.trim();
   const lastMatch = findLastJsonFence(trimmed);
@@ -79,18 +123,30 @@ export function parseReviewResponse(text: string): {
 
   const markdown = stripJsonCodeBlocks(markdownBeforeJson);
   let inlineComments: ReviewComment[] = [];
-  let overallVerdict: "approve" | "comment" | "request-changes" | undefined;
+  let parsedVerdict: Verdict | undefined;
 
   if (lastMatch != null) {
     try {
       const payload = parseInlineCommentsPayload(lastMatch[1].trim());
-      overallVerdict = payload.overallVerdict;
+      parsedVerdict = payload.overallVerdict;
       inlineComments = payload.inlineComments;
-    } catch {
-      overallVerdict = undefined;
-      inlineComments = [];
+    } catch (error) {
+      console.warn(
+        `Failed to parse review JSON payload; falling back to comment-derived verdict: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 
-  return { markdown, inlineComments, overallVerdict };
+  const formattedComments = inlineComments.map((c) => ({
+    ...c,
+    body: formatInlineCommentBody(c),
+  }));
+
+  return {
+    markdown,
+    inlineComments: formattedComments,
+    overallVerdict: resolveVerdict(parsedVerdict, inlineComments),
+  };
 }

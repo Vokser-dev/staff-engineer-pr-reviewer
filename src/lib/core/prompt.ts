@@ -1,38 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
 
+import { MAX_INLINE_COMMENTS } from "@/lib/core/reviewResponse";
+import { PullRequestContext } from "@/lib/types";
+
 export const MODEL = "claude-haiku-4-5-20251001" as const;
 
 export const MAX_TOKENS = 8192;
-
-export interface PullRequestFile {
-  filename: string;
-  status: "added" | "modified" | "removed" | "renamed" | (string & {});
-  additions: number;
-  deletions: number;
-  patch?: string;
-}
-
-export interface PullRequestContext {
-  title: string;
-  description: string | null;
-  author: string;
-  baseBranch: string;
-  headBranch: string;
-  files: PullRequestFile[];
-}
-
-export interface ReviewResult {
-  summary: string;
-  comments: ReviewComment[];
-  overallVerdict: "approve" | "request-changes" | "comment";
-}
-
-export interface ReviewComment {
-  filename: string;
-  line?: number;
-  body: string;
-  severity: "critical" | "major" | "minor" | "nit";
-}
 
 export const STAFF_ENGINEER_SYSTEM_PROMPT = `Du er en erfaren full stack staff engineer som gjennomgår en pull request.
 
@@ -179,8 +152,6 @@ Hvis det ikke finnes relevante funn: skriv **Ingen funn.** og legg til én kort 
 
 Én kort setning som begrunner valget.`;
 
-export const MAX_INLINE_COMMENTS = 8;
-
 const INLINE_COMMENTS_INSTRUCTION = `
 ---
 
@@ -291,18 +262,6 @@ Hopp over alt annet.
 Skriv hele reviewen på **norsk (bokmål)**.${
     options?.requestInlineComments === true ? INLINE_COMMENTS_INSTRUCTION : ""
   }`;
-}
-
-const SEVERITY_LABELS_NO: Record<ReviewComment["severity"], string> = {
-  critical: "Kritisk",
-  major: "Alvorlig",
-  minor: "Lav",
-  nit: "Pirk",
-};
-
-export function formatInlineCommentBody(comment: ReviewComment): string {
-  const label = SEVERITY_LABELS_NO[comment.severity] ?? comment.severity;
-  return `**[${label}]** ${comment.body}`;
 }
 
 export function getThinkingParameters(thinkingEnv?: string): {

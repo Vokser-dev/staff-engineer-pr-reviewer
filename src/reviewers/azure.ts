@@ -1,22 +1,14 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { createTwoFilesPatch } from "diff";
 
+import { stripRef, resolveRepoPath, parseAzureDiff } from "@/lib/azure/pathResolver";
 import {
-  stripRef,
-  changeTypeLabel,
-  statsFromPatch,
-  resolveRepoPath,
-} from "@/lib/azure/pathResolver";
-import {
-  PullRequestContext,
-  PullRequestFile,
-  ReviewComment,
   ReviewHost,
   ReviewFunction,
   runReviewSession,
   reviewPullRequest,
   ReviewerPlugin,
 } from "@/lib/index";
+import { PullRequestContext, ReviewComment } from "@/lib/types";
 
 const API_VERSION = "api-version=7.1";
 const MAX_FILE_CHARS = 500_000;
@@ -153,19 +145,6 @@ async function getFileContent(
   return content;
 }
 
-function buildFilePatch(
-  oldPath: string,
-  newPath: string,
-  oldContent: string,
-  newContent: string,
-): string | undefined {
-  const patch = createTwoFilesPatch(oldPath, newPath, oldContent, newContent, "", "", {
-    context: 3,
-  });
-  const hasChanges = patch.split("\n").some((l) => l.startsWith("+") || l.startsWith("-"));
-  return hasChanges ? patch : undefined;
-}
-
 async function getPullRequestContext(config: AzureConfig): Promise<PullRequestContext> {
   const repoBase = `https://dev.azure.com/${config.organization}/${config.project}/_apis/git/repositories/${config.repositoryId}`;
 
@@ -186,80 +165,11 @@ async function getPullRequestContext(config: AzureConfig): Promise<PullRequestCo
     console.warn("PR has more than 2000 changed paths; only the first page was reviewed.");
   }
 
-  const blobChanges = diff.changes.filter(
-    (c) => c.item.isFolder !== true && c.item.gitObjectType !== "tree",
-  );
-
-  const files: PullRequestFile[] = await Promise.all(
-    blobChanges.map(async (change) => {
-      const status = changeTypeLabel(change.changeType);
-      const filename = change.item.path;
-
-      if (status === "added") {
-        const content = await getFileContent(
-          repoBase,
-          config.personalAccessToken,
-          filename,
-          sourceCommitId,
-        );
-        const patch =
-          content != null ? buildFilePatch("/dev/null", filename, "", content) : undefined;
-        return {
-          filename,
-          status,
-          additions: content != null ? content.split("\n").length : 0,
-          deletions: 0,
-          patch,
-        };
-      }
-
-      if (status === "removed") {
-        const content = await getFileContent(
-          repoBase,
-          config.personalAccessToken,
-          filename,
-          targetCommitId,
-        );
-        const patch =
-          content != null ? buildFilePatch(filename, "/dev/null", content, "") : undefined;
-        return {
-          filename,
-          status,
-          additions: 0,
-          deletions: content != null ? content.split("\n").length : 0,
-          patch,
-        };
-      }
-
-      const [oldContent, newContent] = await Promise.all([
-        getFileContent(
-          repoBase,
-          config.personalAccessToken,
-          change.originalPath ?? filename,
-          targetCommitId,
-        ),
-        getFileContent(repoBase, config.personalAccessToken, filename, sourceCommitId),
-      ]);
-
-      let additions = 0;
-      let deletions = 0;
-      let patch: string | undefined;
-
-      if (oldContent !== undefined && newContent !== undefined) {
-        patch = buildFilePatch(change.originalPath ?? filename, filename, oldContent, newContent);
-        if (patch != null) {
-          ({ additions, deletions } = statsFromPatch(patch));
-        }
-      }
-
-      return {
-        filename,
-        status,
-        additions,
-        deletions,
-        patch,
-      };
-    }),
+  const files = await parseAzureDiff(
+    diff.changes,
+    sourceCommitId,
+    targetCommitId,
+    (path, commitId) => getFileContent(repoBase, config.personalAccessToken, path, commitId),
   );
 
   return {

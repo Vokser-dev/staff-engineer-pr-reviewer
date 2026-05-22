@@ -1,16 +1,12 @@
-import {
-  formatInlineCommentBody,
-  PullRequestContext,
-  PullRequestFile,
-  ReviewComment,
-} from "@/lib/core/prompt";
+import { deriveVerdictFromComments } from "@/lib/core/reviewResponse";
+import { PullRequestContext, PullRequestFile, ReviewComment, Verdict } from "@/lib/types";
 
 export interface ReviewHost {
   fetchContext(): Promise<PullRequestContext>;
   publishReview(
     summaryMarkdown: string,
     inlineComments: ReviewComment[],
-    verdict: "approve" | "comment" | "request-changes",
+    verdict: Verdict,
   ): Promise<void>;
   warn?(message: string): void;
 }
@@ -21,7 +17,7 @@ export type ReviewFunction = (
 ) => Promise<{
   markdown: string;
   inlineComments: ReviewComment[];
-  overallVerdict?: "approve" | "comment" | "request-changes";
+  overallVerdict?: Verdict;
 }>;
 
 export function extractAddedLines(patch: string | undefined): Set<number> {
@@ -81,16 +77,6 @@ export function filterInlineComments(
   return kept;
 }
 
-export function deriveVerdictFromComments(
-  comments: ReviewComment[],
-): "approve" | "comment" | "request-changes" {
-  if (comments.length === 0) {
-    return "approve";
-  }
-  const blocksMerge = comments.some((c) => c.severity === "critical" || c.severity === "major");
-  return blocksMerge ? "request-changes" : "comment";
-}
-
 export async function runReviewSession(
   host: ReviewHost,
   reviewFn: ReviewFunction,
@@ -116,10 +102,5 @@ export async function runReviewSession(
     );
   }
 
-  const formattedComments = filteredComments.map((c) => ({
-    ...c,
-    body: formatInlineCommentBody(c),
-  }));
-
-  await host.publishReview(markdown, formattedComments, verdict);
+  await host.publishReview(markdown, filteredComments, verdict);
 }
