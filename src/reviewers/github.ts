@@ -1,14 +1,12 @@
+import * as fs from "fs";
+
 import * as core from "@actions/core";
 import * as github from "@actions/github";
 import Anthropic from "@anthropic-ai/sdk";
+import * as dotenv from "dotenv";
+import { simpleGit } from "simple-git";
 
-import {
-  reviewPullRequest,
-  ReviewerPlugin,
-  ReviewHost,
-  ReviewFunction,
-  runReviewSession,
-} from "@/lib/index";
+import { reviewPullRequest, ReviewHost, ReviewFunction, runReviewSession } from "@/lib/index";
 import { PullRequestContext, PullRequestFile, ReviewComment, Verdict } from "@/lib/types";
 
 type ReviewEvent = "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
@@ -99,6 +97,38 @@ async function postReview(
   });
 }
 
+function printReviewToConsole(
+  summaryMarkdown: string,
+  inlineComments: ReviewComment[],
+  verdict: Verdict,
+): void {
+  console.log("\n========================================================");
+  console.log("                  SAMMENDRAG AV REVIEW                  ");
+  console.log("========================================================\n");
+  console.log(summaryMarkdown);
+
+  console.log("\n========================================================");
+  console.log("                   INLINE-KOMMENTARER                   ");
+  console.log("========================================================\n");
+
+  const validComments = inlineComments.filter(
+    (c): c is ReviewComment & { line: number } => c.line != null,
+  );
+  if (validComments.length > 0) {
+    for (const comment of validComments) {
+      console.log(`📌 Fil:              ${comment.filename}:${comment.line}`);
+      console.log(`   Alvorlighetsgrad: ${comment.severity.toUpperCase()}`);
+      console.log(`   Kommentar:        ${comment.body}`);
+      console.log("--------------------------------------------------------");
+    }
+  } else {
+    console.log("Ingen inline-kommentarer funnet.");
+  }
+
+  console.log(`\nSamlet vurdering: ${verdict.toUpperCase()}`);
+  console.log("========================================================\n");
+}
+
 async function postFallbackComment(
   octokit: ReturnType<typeof github.getOctokit>,
   owner: string,
@@ -114,29 +144,181 @@ async function postFallbackComment(
   });
 }
 
-export const run: ReviewerPlugin["run"] = async (): Promise<void> => {
-  const token = core.getInput("github-token", { required: true });
-  const anthropicApiKey = core.getInput("anthropic-api-key", {
-    required: true,
-  });
+export const run = async (options?: {
+  ref?: string;
+  repo?: string;
+  pr?: number;
+}): Promise<void> => {
+  const isActions = process.env.GITHUB_ACTIONS === "true";
+
+  // Load local environment variables if we're not running in GitHub Actions
+  if (!isActions) {
+    const envPath = fs.existsSync(".env.local") ? ".env.local" : ".env";
+    dotenv.config({ path: envPath });
+  }
+
+  // Get token and api key with fallback to env vars
+  let token = process.env.GITHUB_TOKEN ?? process.env.INPUT_GITHUB_TOKEN;
+  if (token === undefined || token === "") {
+    token = isActions ? core.getInput("github-token", { required: false }) : "";
+  }
+
+  let anthropicApiKey = process.env.ANTHROPIC_API_KEY ?? process.env.INPUT_ANTHROPIC_API_KEY;
+  if (anthropicApiKey === undefined || anthropicApiKey === "") {
+    anthropicApiKey = isActions ? core.getInput("anthropic-api-key", { required: false }) : "";
+  }
+
+  const logInfo = (msg: string) => (isActions ? core.info(msg) : console.log(msg));
+  const logWarn = (msg: string) => (isActions ? core.warning(msg) : console.warn(msg));
+  const logError = (msg: string) => (isActions ? core.setFailed(msg) : console.error(msg));
+
+  if (token === "") {
+    logError("GitHub token is required (set GITHUB_TOKEN environment variable).");
+    if (!isActions) process.exit(1);
+    return;
+  }
+
+  if (anthropicApiKey === "") {
+    logError("Anthropic API key is required (set ANTHROPIC_API_KEY environment variable).");
+    if (!isActions) process.exit(1);
+    return;
+  }
 
   const octokit = github.getOctokit(token);
-  const context = github.context;
 
-  if (context.eventName !== "pull_request") {
-    core.setFailed("This action only runs on pull_request events.");
+  let owner = "";
+  let repo = "";
+  let pullNumber: number | undefined = undefined;
+  let targetCommitSha: string | undefined = undefined;
+
+  if (
+    isActions &&
+    options?.ref === undefined &&
+    options?.pr === undefined &&
+    options?.repo === undefined
+  ) {
+    // Standard GitHub Actions workflow path
+    const context = github.context;
+    if (context.eventName !== "pull_request") {
+      core.setFailed("This action only runs on pull_request events.");
+      return;
+    }
+
+    pullNumber = context.payload.pull_request?.number;
+    if (pullNumber === undefined) {
+      core.setFailed("Could not determine pull request number.");
+      return;
+    }
+
+    owner = context.repo.owner;
+    repo = context.repo.repo;
+  } else {
+    // Local CLI path (or overridden actions run)
+    const git = simpleGit();
+
+    // 1. Determine repository owner and repo
+    if (options?.repo !== undefined) {
+      const parts = options.repo.split("/");
+      if (parts.length !== 2) {
+        logError(`Invalid repository format: "${options.repo}". Expected "owner/repo".`);
+        process.exit(1);
+      }
+      owner = parts[0];
+      repo = parts[1];
+    } else if (
+      process.env.GITHUB_REPOSITORY !== undefined &&
+      process.env.GITHUB_REPOSITORY !== ""
+    ) {
+      const parts = process.env.GITHUB_REPOSITORY.split("/");
+      owner = parts[0];
+      repo = parts[1];
+    } else {
+      try {
+        const remotes = await git.getRemotes(true);
+        const origin = remotes.find((r) => r.name === "origin")?.refs.push;
+        if (origin === undefined || origin === "") {
+          logError(
+            "Could not find 'origin' remote URL. Please specify repository using --repo <owner/repo>.",
+          );
+          process.exit(1);
+        }
+        const cleanUrl = origin.replace(/\.git$/, "");
+        const match = cleanUrl.match(/([^/:]+)\/([^/:]+)$/);
+        if (match === null) {
+          logError(
+            `Could not parse owner/repo from remote URL: "${origin}". Please specify repository using --repo <owner/repo>.`,
+          );
+          process.exit(1);
+        }
+        owner = match[1];
+        repo = match[2];
+      } catch (err) {
+        logError(
+          `Error detecting git remote: ${err instanceof Error ? err.message : String(err)}. Please specify repository using --repo <owner/repo>.`,
+        );
+        process.exit(1);
+      }
+    }
+
+    // 2. Resolve commit SHA if ref is provided (or default to HEAD if pr is not specified)
+    if (options?.ref !== undefined || options?.pr === undefined) {
+      const ref = options?.ref ?? "HEAD";
+      try {
+        targetCommitSha = (await git.raw(["rev-parse", ref])).trim();
+      } catch (err) {
+        logError(
+          `Could not resolve git ref "${ref}": ${err instanceof Error ? err.message : String(err)}`,
+        );
+        process.exit(1);
+      }
+    }
+
+    // 3. Determine pull request number
+    if (options?.pr !== undefined) {
+      pullNumber = options.pr;
+    } else if (targetCommitSha !== undefined && targetCommitSha !== "") {
+      logInfo(`Finding Pull Request associated with commit: ${targetCommitSha}`);
+      try {
+        const prs = await octokit.rest.repos.listPullRequestsAssociatedWithCommit({
+          owner,
+          repo,
+          commit_sha: targetCommitSha,
+        });
+
+        const openPr = prs.data.find((p) => p.state === "open");
+        const matchedPr = openPr ?? prs.data[0];
+
+        if (matchedPr === undefined) {
+          logError(
+            `No Pull Request found on GitHub associated with commit ${targetCommitSha}. Please ensure the commit has been pushed and a PR is open, or specify the PR number using --pr.`,
+          );
+          process.exit(1);
+        }
+
+        pullNumber = matchedPr.number;
+        logInfo(`Found PR #${pullNumber} ("${matchedPr.title}")`);
+      } catch (err) {
+        logError(
+          `Failed to fetch associated Pull Request from GitHub: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+        process.exit(1);
+      }
+    }
+  }
+
+  if (pullNumber === undefined || owner === "" || repo === "") {
+    logError("Could not resolve owner, repo, or pull request number.");
+    if (!isActions) process.exit(1);
     return;
   }
 
-  const pullNumber = context.payload.pull_request?.number;
-  if (pullNumber == null) {
-    core.setFailed("Could not determine pull request number.");
-    return;
+  logInfo(`Reviewing PR #${pullNumber} in ${owner}/${repo}`);
+
+  if (!isActions) {
+    logInfo("Running locally: review will be printed to the console and NOT posted to GitHub.");
   }
-
-  const { owner, repo } = context.repo;
-
-  core.info(`Reviewing PR #${pullNumber} in ${owner}/${repo}`);
 
   const anthropic = new Anthropic({ apiKey: anthropicApiKey });
 
@@ -151,16 +333,25 @@ export const run: ReviewerPlugin["run"] = async (): Promise<void> => {
         repo,
         pullNumber,
       );
-      headSha = sha;
+      // Anchor review comments on the target commit if specified, otherwise on the PR head SHA
+      headSha = targetCommitSha ?? sha;
       return prContext;
     },
     async publishReview(summaryMarkdown, inlineComments, verdict) {
       reviewSummary = summaryMarkdown;
+
+      if (!isActions) {
+        printReviewToConsole(summaryMarkdown, inlineComments, verdict);
+        return;
+      }
+
       if (headSha == null || headSha === "") {
         throw new Error("Cannot publish review: headSha was not resolved during fetchContext");
       }
       const event = verdictToEvent(verdict);
-      core.info(`Posting review (event=${event}) with ${inlineComments.length} inline comment(s).`);
+      logInfo(
+        `Posting review (event=${event}) with ${inlineComments.length} inline comment(s) on commit ${headSha}.`,
+      );
       try {
         await postReview(
           octokit,
@@ -172,27 +363,35 @@ export const run: ReviewerPlugin["run"] = async (): Promise<void> => {
           event,
           inlineComments,
         );
-        core.info("Review posted successfully.");
+        logInfo("Review posted successfully.");
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        core.warning(`Failed to create formal review (${message}). Falling back to flat comment.`);
+        logWarn(`Failed to create formal review (${message}). Falling back to flat comment.`);
         await postFallbackComment(octokit, owner, repo, pullNumber, summaryMarkdown);
-        core.info("Fallback comment posted.");
+        logInfo("Fallback comment posted.");
       }
     },
     warn(msg) {
-      core.warning(msg);
+      logWarn(msg);
     },
   };
 
   const reviewFn: ReviewFunction = (pr, options) => {
-    core.info(`PR has ${pr.files.length} changed file(s). Sending to Claude...`);
+    logInfo(`PR has ${pr.files.length} changed file(s). Sending to Claude...`);
     return reviewPullRequest(anthropic, pr, { inline: options?.requestInlineComments });
   };
 
-  await runReviewSession(host, reviewFn, { inline: true });
+  try {
+    await runReviewSession(host, reviewFn, { inline: true });
+  } catch (err) {
+    logError(`Review session failed: ${err instanceof Error ? err.message : String(err)}`);
+    if (!isActions) process.exit(1);
+    return;
+  }
 
-  core.setOutput("review", reviewSummary);
+  if (isActions) {
+    core.setOutput("review", reviewSummary);
+  }
 };
 
 if (require.main === module) {
