@@ -194,9 +194,7 @@ export const run = async (options?: {
   const hasAnthropicKey = (process.env.ANTHROPIC_API_KEY ?? "") !== "";
   const hasOpenaiKey = (process.env.OPENAI_API_KEY ?? "") !== "";
   if (!hasAnthropicKey && !hasOpenaiKey) {
-    logError(
-      "Missing required API key: provide either ANTHROPIC_API_KEY or OPENAI_API_KEY.",
-    );
+    logError("Missing required API key: provide either ANTHROPIC_API_KEY or OPENAI_API_KEY.");
     if (!isActions) process.exit(1);
     return;
   }
