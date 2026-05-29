@@ -1,23 +1,13 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { createTwoFilesPatch } from "diff";
-
+import { stripRef, resolveRepoPath, parseAzureDiff } from "@/lib/azure/pathResolver";
 import {
-  stripRef,
-  changeTypeLabel,
-  statsFromPatch,
-  resolveRepoPath,
-} from "@/lib/azure/pathResolver";
-import {
-  formatInlineCommentBody,
-  PullRequestContext,
-  PullRequestFile,
-  ReviewComment,
   ReviewHost,
   ReviewFunction,
   runReviewSession,
   reviewPullRequest,
   ReviewerPlugin,
+  createLLMClient,
 } from "@/lib/index";
+import { PullRequestContext, ReviewComment } from "@/lib/types";
 
 const API_VERSION = "api-version=7.1";
 const MAX_FILE_CHARS = 500_000;
@@ -28,7 +18,6 @@ interface AzureConfig {
   repositoryId: string;
   pullRequestId: number;
   personalAccessToken: string;
-  anthropicApiKey: string;
 }
 
 function loadConfig(): AzureConfig {
@@ -45,7 +34,6 @@ function loadConfig(): AzureConfig {
     repositoryId: required("AZURE_DEVOPS_REPO_ID"),
     pullRequestId: parseInt(required("AZURE_DEVOPS_PR_ID"), 10),
     personalAccessToken: required("AZURE_DEVOPS_PAT"),
-    anthropicApiKey: required("ANTHROPIC_API_KEY"),
   };
 }
 
@@ -79,6 +67,48 @@ async function azurePost(url: string, pat: string, body: unknown): Promise<void>
     const text = await response.text();
     throw new Error(`Azure DevOps POST error ${response.status}: ${url}\n${text}`);
   }
+}
+
+async function azurePut(url: string, pat: string, body: unknown): Promise<void> {
+  const response = await fetch(url, {
+    method: "PUT",
+    headers: {
+      Authorization: authHeader(pat),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Azure DevOps PUT error ${response.status}: ${url}\n${text}`);
+  }
+}
+
+interface AzureConnectionData {
+  authenticatedUser: { id: string };
+}
+
+async function getCurrentUserId(organization: string, pat: string): Promise<string> {
+  const url = `https://dev.azure.com/${organization}/_apis/connectionData`;
+  const data = await azureGet<AzureConnectionData>(url, pat);
+  return data.authenticatedUser.id;
+}
+
+const ADO_VOTE: Partial<Record<"approve" | "comment" | "request-changes", number>> = {
+  approve: 10,
+  "request-changes": -10,
+};
+
+async function postVote(
+  config: AzureConfig,
+  verdict: "approve" | "comment" | "request-changes",
+): Promise<void> {
+  const vote = ADO_VOTE[verdict];
+  if (vote == null) return;
+
+  const userId = await getCurrentUserId(config.organization, config.personalAccessToken);
+  const url = `https://dev.azure.com/${config.organization}/${config.project}/_apis/git/repositories/${config.repositoryId}/pullRequests/${config.pullRequestId}/reviewers/${userId}?${API_VERSION}`;
+  await azurePut(url, config.personalAccessToken, { vote });
 }
 
 interface AzurePR {
@@ -154,19 +184,6 @@ async function getFileContent(
   return content;
 }
 
-function buildFilePatch(
-  oldPath: string,
-  newPath: string,
-  oldContent: string,
-  newContent: string,
-): string | undefined {
-  const patch = createTwoFilesPatch(oldPath, newPath, oldContent, newContent, "", "", {
-    context: 3,
-  });
-  const hasChanges = patch.split("\n").some((l) => l.startsWith("+") || l.startsWith("-"));
-  return hasChanges ? patch : undefined;
-}
-
 async function getPullRequestContext(config: AzureConfig): Promise<PullRequestContext> {
   const repoBase = `https://dev.azure.com/${config.organization}/${config.project}/_apis/git/repositories/${config.repositoryId}`;
 
@@ -187,80 +204,11 @@ async function getPullRequestContext(config: AzureConfig): Promise<PullRequestCo
     console.warn("PR has more than 2000 changed paths; only the first page was reviewed.");
   }
 
-  const blobChanges = diff.changes.filter(
-    (c) => c.item.isFolder !== true && c.item.gitObjectType !== "tree",
-  );
-
-  const files: PullRequestFile[] = await Promise.all(
-    blobChanges.map(async (change) => {
-      const status = changeTypeLabel(change.changeType);
-      const filename = change.item.path;
-
-      if (status === "added") {
-        const content = await getFileContent(
-          repoBase,
-          config.personalAccessToken,
-          filename,
-          sourceCommitId,
-        );
-        const patch =
-          content != null ? buildFilePatch("/dev/null", filename, "", content) : undefined;
-        return {
-          filename,
-          status,
-          additions: content != null ? content.split("\n").length : 0,
-          deletions: 0,
-          patch,
-        };
-      }
-
-      if (status === "removed") {
-        const content = await getFileContent(
-          repoBase,
-          config.personalAccessToken,
-          filename,
-          targetCommitId,
-        );
-        const patch =
-          content != null ? buildFilePatch(filename, "/dev/null", content, "") : undefined;
-        return {
-          filename,
-          status,
-          additions: 0,
-          deletions: content != null ? content.split("\n").length : 0,
-          patch,
-        };
-      }
-
-      const [oldContent, newContent] = await Promise.all([
-        getFileContent(
-          repoBase,
-          config.personalAccessToken,
-          change.originalPath ?? filename,
-          targetCommitId,
-        ),
-        getFileContent(repoBase, config.personalAccessToken, filename, sourceCommitId),
-      ]);
-
-      let additions = 0;
-      let deletions = 0;
-      let patch: string | undefined;
-
-      if (oldContent !== undefined && newContent !== undefined) {
-        patch = buildFilePatch(change.originalPath ?? filename, filename, oldContent, newContent);
-        if (patch != null) {
-          ({ additions, deletions } = statsFromPatch(patch));
-        }
-      }
-
-      return {
-        filename,
-        status,
-        additions,
-        deletions,
-        patch,
-      };
-    }),
+  const files = await parseAzureDiff(
+    diff.changes,
+    sourceCommitId,
+    targetCommitId,
+    (path, commitId) => getFileContent(repoBase, config.personalAccessToken, path, commitId),
   );
 
   return {
@@ -315,10 +263,9 @@ async function postInlineComment(
 
 async function postInlineComments(
   config: AzureConfig,
-  pr: PullRequestContext,
+  changedFiles: Set<string>,
   comments: ReviewComment[],
 ): Promise<number> {
-  const changedFiles = new Set(pr.files.map((f) => f.filename));
   let posted = 0;
 
   for (const comment of comments) {
@@ -328,7 +275,7 @@ async function postInlineComments(
       continue;
     }
 
-    const body = formatInlineCommentBody(comment);
+    const body = comment.body;
 
     try {
       await postInlineComment(config, filePath, comment.line, body);
@@ -348,22 +295,34 @@ export const run: ReviewerPlugin["run"] = async (): Promise<void> => {
     `Reviewing Azure DevOps PR #${config.pullRequestId} in ${config.organization}/${config.project}`,
   );
 
-  const anthropic = new Anthropic({ apiKey: config.anthropicApiKey });
+  const llmClient = createLLMClient();
+
+  const changedFiles = new Set<string>();
 
   const host: ReviewHost = {
     async fetchContext() {
-      return getPullRequestContext(config);
+      const ctx = await getPullRequestContext(config);
+      for (const file of ctx.files) {
+        changedFiles.add(file.filename);
+      }
+      return ctx;
     },
-    async publishSummary(markdown) {
-      await postReviewSummary(config, markdown);
-    },
-    async publishInline(comments, ctx) {
-      return postInlineComments(config, ctx, comments);
+    async publishReview(summaryMarkdown, inlineComments, verdict) {
+      await postReviewSummary(config, summaryMarkdown);
+      await postInlineComments(config, changedFiles, inlineComments);
+      try {
+        await postVote(config, verdict);
+        if (verdict !== "comment") {
+          console.log(`Vote posted: ${verdict}`);
+        }
+      } catch (err) {
+        console.warn("Failed to post vote:", err);
+      }
     },
   };
 
   const reviewFn: ReviewFunction = (pr, options) => {
-    return reviewPullRequest(anthropic, pr, { inline: options?.requestInlineComments });
+    return reviewPullRequest(llmClient, pr, { inline: options?.requestInlineComments });
   };
 
   await runReviewSession(host, reviewFn, { inline: true });

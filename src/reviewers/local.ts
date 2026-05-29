@@ -1,11 +1,18 @@
 import * as fs from "fs";
 
-import Anthropic from "@anthropic-ai/sdk";
-import * as p from "@clack/prompts";
 import * as dotenv from "dotenv";
 import { simpleGit } from "simple-git";
 
-import { PullRequestContext, PullRequestFile, reviewPullRequest } from "@/lib/index";
+import {
+  PullRequestContext,
+  PullRequestFile,
+  ReviewComment,
+  reviewPullRequest,
+  ReviewHost,
+  ReviewFunction,
+  runReviewSession,
+  createLLMClient,
+} from "@/lib/index";
 
 // Load environment variables
 const envPath = fs.existsSync(".env.local") ? ".env.local" : ".env";
@@ -22,24 +29,17 @@ dotenv.config({ path: envPath });
  *   ("local") isn't mistaken for a SHA.
  */
 export async function run(args: string[] = process.argv.slice(2)): Promise<void> {
-  p.intro("Staff Engineer PR Reviewer — local");
-
   const git = simpleGit();
-  const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
-  if (anthropicApiKey == null || anthropicApiKey === "") {
-    p.log.error("ANTHROPIC_API_KEY environment variable is not set.");
-    p.log.info("Set it in your environment or in a .env / .env.local file.");
-    p.outro("Aborted.");
+  let llmClient;
+  try {
+    llmClient = createLLMClient();
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    console.error("Please set it in your environment or in a .env / .env.local file.");
     process.exit(1);
   }
 
-  if (args[0] === "") {
-    p.log.error("Empty string is not a valid git revision or SHA.");
-    p.outro("Aborted.");
-    process.exit(1);
-  }
-
-  const isUncommitted = args[0] == null;
+  const isUncommitted = args[0] == null || args[0] === "";
   let commitSha = "";
   let base = "HEAD";
   let author = "Local User";
@@ -49,7 +49,9 @@ export async function run(args: string[] = process.argv.slice(2)): Promise<void>
   let baseBranch = "HEAD";
 
   if (isUncommitted) {
-    p.log.step("No commit SHA specified — reviewing uncommitted changes relative to HEAD.");
+    console.log(
+      "No commit SHA specified. Running code review on current uncommitted changes relative to HEAD.",
+    );
     try {
       const name = (await git.raw(["config", "user.name"])).trim();
       const email = (await git.raw(["config", "user.email"])).trim();
@@ -69,12 +71,11 @@ export async function run(args: string[] = process.argv.slice(2)): Promise<void>
     try {
       commitSha = (await git.raw(["rev-parse", "--verify", rawSha])).trim();
     } catch {
-      p.log.error(`Invalid git revision or SHA: "${rawSha}"`);
-      p.outro("Aborted.");
+      console.error(`Error: Invalid git revision or SHA: "${rawSha}"`);
       process.exit(1);
     }
 
-    p.log.step(`Reviewing commit: ${commitSha}`);
+    console.log(`Running code review for commit: ${commitSha}`);
 
     // Fetch parent revision to compute the diff against
     try {
@@ -85,8 +86,7 @@ export async function run(args: string[] = process.argv.slice(2)): Promise<void>
       const isRoot = parents.length === 1;
       base = isRoot ? "4b825dc642cb6eb9a0accbf1240487182c04b2c4" : `${commitSha}~1`;
     } catch (err) {
-      p.log.error(`Failed to retrieve git parents for ${commitSha}: ${String(err)}`);
-      p.outro("Aborted.");
+      console.error(`Error retrieving git parents for commit ${commitSha}:`, err);
       process.exit(1);
     }
 
@@ -96,7 +96,7 @@ export async function run(args: string[] = process.argv.slice(2)): Promise<void>
       title = (await git.raw(["show", "-s", "--format=%s", commitSha])).trim();
       description = (await git.raw(["show", "-s", "--format=%b", commitSha])).trim();
     } catch {
-      p.log.warn("Failed to retrieve commit metadata from git. Using fallback values.");
+      console.warn("Warning: Failed to retrieve commit metadata from git. Using fallback values.");
     }
 
     baseBranch = base.substring(0, 7);
@@ -113,7 +113,9 @@ export async function run(args: string[] = process.argv.slice(2)): Promise<void>
     const statusOutput = (await git.raw(statusArgs)).trim();
 
     if (statusOutput === "") {
-      p.outro(isUncommitted ? "No uncommitted changes found." : "No changed files in this commit.");
+      console.log(
+        isUncommitted ? "No uncommitted changes found." : "No changed files in this commit.",
+      );
       return;
     }
 
@@ -165,7 +167,7 @@ export async function run(args: string[] = process.argv.slice(2)): Promise<void>
           : ["diff", base, commitSha, "--", filename];
         patch = await git.raw(patchArgs);
       } catch {
-        p.log.warn(`Could not fetch patch for ${filename}`);
+        console.warn(`Warning: Could not fetch patch for ${filename}`);
       }
 
       files.push({
@@ -177,8 +179,7 @@ export async function run(args: string[] = process.argv.slice(2)): Promise<void>
       });
     }
   } catch (err) {
-    p.log.error(`Failed to retrieve changed files from git: ${String(err)}`);
-    p.outro("Aborted.");
+    console.error("Error retrieving changed files from git:", err);
     process.exit(1);
   }
 
@@ -191,47 +192,64 @@ export async function run(args: string[] = process.argv.slice(2)): Promise<void>
     files,
   };
 
-  const fileCount = `${files.length} endret(e) fil(er)`;
-  const spinner = p.spinner();
-  spinner.start(
+  const provider = (process.env.LLM_PROVIDER ?? "anthropic").toLowerCase();
+  const providerLabel = provider === "openai" ? "OpenAI" : "Claude";
+  console.log(
     isUncommitted
-      ? `Endringssettet har ${fileCount}. Sender til Claude...`
-      : `Commit-en har ${fileCount}. Sender til Claude...`,
+      ? `Endringssettet har ${files.length} endret(e) fil(er). Sender til ${providerLabel}...`
+      : `Commit-en har ${files.length} endret(e) fil(er). Sender til ${providerLabel}...`,
   );
 
-  const anthropic = new Anthropic({ apiKey: anthropicApiKey });
+  const host: ReviewHost = {
+    fetchContext() {
+      return Promise.resolve(prContext);
+    },
+    publishReview(summaryMarkdown, inlineComments, verdict) {
+      console.log("\n========================================================");
+      console.log("                  SAMMENDRAG AV REVIEW                  ");
+      console.log("========================================================\n");
+      console.log(summaryMarkdown);
+
+      console.log("\n========================================================");
+      console.log("                   INLINE-KOMMENTARER                   ");
+      console.log("========================================================\n");
+
+      const validComments = inlineComments.filter(
+        (c): c is ReviewComment & { line: number } => c.line != null,
+      );
+      if (validComments.length > 0) {
+        for (const comment of validComments) {
+          const severityStr = comment.severity.toUpperCase();
+          console.log(`📌 Fil:              ${comment.filename}:${comment.line}`);
+          console.log(`   Alvorlighetsgrad: ${severityStr}`);
+          console.log(`   Kommentar:        ${comment.body}`);
+          console.log("--------------------------------------------------------");
+        }
+      } else {
+        console.log("Ingen inline-kommentarer funnet.");
+      }
+
+      console.log(`\nSamlet vurdering: ${verdict.toUpperCase()}`);
+      console.log("========================================================\n");
+      return Promise.resolve();
+    },
+  };
+
+  const reviewFn: ReviewFunction = (pr, options) => {
+    return reviewPullRequest(llmClient, pr, { inline: options?.requestInlineComments });
+  };
 
   try {
-    const { markdown, inlineComments, overallVerdict } = await reviewPullRequest(
-      anthropic,
-      prContext,
-      { inline: true },
-    );
-    spinner.stop("Review mottatt.");
-
-    p.note(markdown, "Sammendrag av review");
-
-    if (inlineComments != null && inlineComments.length > 0) {
-      const body = inlineComments
-        .map((c) => `${c.filename}:${c.line ?? "N/A"}  [${c.severity.toUpperCase()}]\n${c.body}`)
-        .join("\n\n");
-      p.note(body, "Inline-kommentarer");
-    } else {
-      p.log.info("Ingen inline-kommentarer funnet.");
-    }
-
-    p.outro(`Samlet vurdering: ${overallVerdict?.toUpperCase() ?? "UKJENT"}`);
+    await runReviewSession(host, reviewFn, { inline: true });
   } catch (err) {
-    spinner.stop("Review feilet.");
-    p.log.error(`Feil ved kall til Anthropic API eller parsing av svar: ${String(err)}`);
-    p.outro("Aborted.");
+    console.error("Feil ved kall til Anthropic API eller parsing av svar:", err);
     process.exit(1);
   }
 }
 
 if (require.main === module) {
   run().catch((err: Error) => {
-    p.log.error(`Fatal error: ${err.message}`);
+    console.error("Fatal error:", err.message);
     process.exit(1);
   });
 }

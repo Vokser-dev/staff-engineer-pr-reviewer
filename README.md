@@ -24,7 +24,7 @@ Focused review of **changed lines only** — high signal, low noise. Reviews are
 2. Funn (med alvorlighetsgrad: critical, major, minor)
 3. Konklusjon: **GODKJENN** · **GODKJENN MED SMÅTING** · **BE OM ENDRINGER** · **BLOKKER**
 
-Both platforms post up to 8 **inline** comments on critical/major/minor items in the diff. GitHub uses a formal review (`pulls.createReview`) with an event mapped from the verdict; Azure posts inline thread comments.
+Both platforms post up to 8 **inline** comments on critical/major/minor items in the diff. GitHub uses a formal review (`pulls.createReview`) with an event mapped from the verdict (`APPROVE`, `REQUEST_CHANGES`, or `COMMENT`). Azure posts inline thread comments and casts a reviewer vote (`Approved` for approve, `Rejected` for request-changes, no vote for comment).
 
 ## Quick start
 
@@ -129,7 +129,7 @@ jobs:
 
 Required setup in the target project:
 
-1. **Personal access token** with scopes `Code: Read` + `Pull Request Threads: Read & Write` (User Settings → Personal access tokens).
+1. **Personal access token** with scopes `Code: Read & Write` + `Pull Request Threads: Read & Write` (User Settings → Personal access tokens). The `Code: Read & Write` scope is required for the reviewer vote API (approve/reject); `Pull Request Threads: Read & Write` covers the inline comment threads. If you only grant thread scope, reviews will still post but no vote will be cast.
 2. **Pipeline variables** (mark both as secret):
    - `ANTHROPIC_API_KEY` — your Anthropic key
    - `AZURE_DEVOPS_PAT` — the PAT from step 1
@@ -164,11 +164,14 @@ This trades release ceremony for simplicity. If you ever want fine-grained pinni
 
 ## Configuration
 
-| Variable             | Description                                                                                                                                                                                                                                                                                                 |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ANTHROPIC_API_KEY`  | **Required.** Your Anthropic API key.                                                                                                                                                                                                                                                                       |
-| `ANTHROPIC_MODEL`    | The model to use. Defaults to `claude-haiku-4-5-20251001`.                                                                                                                                                                                                                                                  |
-| `ANTHROPIC_THINKING` | Control the thinking budget. Set to `false`, `off`, `0` to disable (default), or a number (e.g. `2048`, `4096`) to enable with a specific token budget (minimum `1024`, defaults to `2048` if non-numeric/invalid). When thinking is enabled, the API request temperature is automatically locked to `1.0`. |
+| Variable             | Description                                                                                                                                                                                                                                                                                                                                                                              |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LLM_PROVIDER`       | Which LLM provider to use. Accepts `anthropic` (default) or `openai`.                                                                                                                                                                                                                                                                                                                    |
+| `ANTHROPIC_API_KEY`  | **Required when `LLM_PROVIDER=anthropic` (default).** Your Anthropic API key.                                                                                                                                                                                                                                                                                                            |
+| `ANTHROPIC_MODEL`    | Anthropic model override. Defaults to `claude-haiku-4-5-20251001`.                                                                                                                                                                                                                                                                                                                       |
+| `ANTHROPIC_THINKING` | Anthropic extended thinking budget. Set to `false`, `off`, `0` to disable (default), or a number (e.g. `2048`, `4096`) to enable with a specific token budget (minimum `1024`, defaults to `2048` if non-numeric/invalid). When thinking is enabled, the API request temperature is automatically locked to `1.0`. A warning is printed if this is set when using the `openai` provider. |
+| `OPENAI_API_KEY`     | **Required when `LLM_PROVIDER=openai`.** Your OpenAI API key.                                                                                                                                                                                                                                                                                                                            |
+| `OPENAI_MODEL`       | OpenAI model override. Defaults to `gpt-4o`.                                                                                                                                                                                                                                                                                                                                             |
 
 ### Overriding model or thinking budget per repo
 

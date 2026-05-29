@@ -1,4 +1,52 @@
-import { ReviewComment, MAX_INLINE_COMMENTS } from "@/lib/core/prompt";
+import { InlineSeverity, ReviewComment, Severity, Verdict } from "@/lib/types";
+
+export const MAX_INLINE_COMMENTS = 8;
+
+const INLINE_SEVERITIES: readonly InlineSeverity[] = ["critical", "major", "minor"];
+const VERDICTS: readonly Verdict[] = ["approve", "comment", "request-changes"];
+
+function isInlineSeverity(value: string): value is InlineSeverity {
+  return (INLINE_SEVERITIES as readonly string[]).includes(value);
+}
+
+function isVerdict(value: string): value is Verdict {
+  return (VERDICTS as readonly string[]).includes(value);
+}
+
+export const SEVERITY_LABELS_NO: Record<Severity, string> = {
+  critical: "Kritisk",
+  major: "Alvorlig",
+  minor: "Lav",
+  nit: "Pirk",
+};
+
+// Strips only known severity prefixes the model may have inserted before we re-apply the
+// canonical one: bold-bracket (`**[Critical]**`), plain bracket (`[Critical]`), or `Label:` form.
+// Keep the label set explicit so bracketed comment content like "[array indexing]" is preserved.
+const EXISTING_SEVERITY_PREFIX =
+  /^(?:\*\*\s*\[(?:critical|major|minor|nit|kritisk|alvorlig|lav|pirk)\]\s*\*\*|\[(?:critical|major|minor|nit|kritisk|alvorlig|lav|pirk)\]|(?:critical|major|minor|nit|kritisk|alvorlig|lav|pirk)\s*:)\s*/i;
+
+export function formatInlineCommentBody(comment: { severity: Severity; body: string }): string {
+  const label = SEVERITY_LABELS_NO[comment.severity];
+  const prefix = `**[${label}]** `;
+  const cleanBody = comment.body.replace(EXISTING_SEVERITY_PREFIX, "").trim();
+  return `${prefix}${cleanBody}`;
+}
+
+export function deriveVerdictFromComments(comments: Array<{ severity: Severity }>): Verdict {
+  if (comments.length === 0) {
+    return "approve";
+  }
+  const blocksMerge = comments.some((c) => c.severity === "critical" || c.severity === "major");
+  return blocksMerge ? "request-changes" : "comment";
+}
+
+function resolveVerdict(parsedVerdict: Verdict | undefined, comments: ReviewComment[]): Verdict {
+  const derived = deriveVerdictFromComments(comments);
+  if (derived === "request-changes") return "request-changes";
+  if (parsedVerdict === undefined || parsedVerdict === "request-changes") return derived;
+  return parsedVerdict;
+}
 
 /** Matches ```json fenced blocks; closing ``` may be on the same line or after whitespace. */
 const JSON_FENCE_PATTERN = "```json\\s*\\n([\\s\\S]*?)\\s*```";
@@ -16,7 +64,7 @@ function findLastJsonFence(text: string): RegExpMatchArray | undefined {
 }
 
 function parseInlineCommentsPayload(jsonText: string): {
-  overallVerdict?: "approve" | "comment" | "request-changes";
+  overallVerdict?: Verdict;
   inlineComments: ReviewComment[];
 } {
   const parsed = JSON.parse(jsonText) as {
@@ -29,15 +77,11 @@ function parseInlineCommentsPayload(jsonText: string): {
     }>;
   };
 
-  const verdicts = new Set(["approve", "comment", "request-changes"]);
   const normalizedVerdict =
     typeof parsed.overallVerdict === "string" ? parsed.overallVerdict.toLowerCase() : undefined;
   const overallVerdict =
-    normalizedVerdict !== undefined && verdicts.has(normalizedVerdict)
-      ? (normalizedVerdict as "approve" | "comment" | "request-changes")
-      : undefined;
+    normalizedVerdict !== undefined && isVerdict(normalizedVerdict) ? normalizedVerdict : undefined;
 
-  const inlineSeverities = new Set(["critical", "major", "minor"]);
   const inlineComments: ReviewComment[] = [];
 
   for (const raw of parsed.inlineComments ?? []) {
@@ -52,13 +96,13 @@ function parseInlineCommentsPayload(jsonText: string): {
     if (!Number.isInteger(raw.line) || raw.line < 1) continue;
 
     const severity = (raw.severity ?? "minor").toLowerCase();
-    if (!inlineSeverities.has(severity)) continue;
+    if (!isInlineSeverity(severity)) continue;
 
     inlineComments.push({
       filename: raw.file.replace(/^\//, ""),
       line: raw.line,
       body: raw.body.trim(),
-      severity: severity as ReviewComment["severity"],
+      severity,
     });
 
     if (inlineComments.length >= MAX_INLINE_COMMENTS) break;
@@ -70,7 +114,7 @@ function parseInlineCommentsPayload(jsonText: string): {
 export function parseReviewResponse(text: string): {
   markdown: string;
   inlineComments: ReviewComment[];
-  overallVerdict?: "approve" | "comment" | "request-changes";
+  overallVerdict: Verdict;
 } {
   const trimmed = text.trim();
   const lastMatch = findLastJsonFence(trimmed);
@@ -79,18 +123,39 @@ export function parseReviewResponse(text: string): {
 
   const markdown = stripJsonCodeBlocks(markdownBeforeJson);
   let inlineComments: ReviewComment[] = [];
-  let overallVerdict: "approve" | "comment" | "request-changes" | undefined;
+  let parsedVerdict: Verdict | undefined;
 
   if (lastMatch != null) {
     try {
       const payload = parseInlineCommentsPayload(lastMatch[1].trim());
-      overallVerdict = payload.overallVerdict;
+      parsedVerdict = payload.overallVerdict;
       inlineComments = payload.inlineComments;
-    } catch {
-      overallVerdict = undefined;
-      inlineComments = [];
+    } catch (error) {
+      console.warn(
+        `Failed to parse review JSON payload; falling back to comment verdict: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      parsedVerdict = "comment";
     }
   }
 
-  return { markdown, inlineComments, overallVerdict };
+  // The verdict is derived purely from comment severities (see deriveVerdictFromComments),
+  // which formatting never touches. Resolve it before formatting so the data flow is explicit:
+  // body formatting is a pure presentation step and plays no part in the verdict.
+  const overallVerdict = resolveVerdict(parsedVerdict, inlineComments);
+
+  // NOTE TO REVIEWERS: this is the single, canonical site where inline comment bodies are
+  // formatted. runReviewSession no longer re-applies formatInlineCommentBody (that call was
+  // removed when this logic moved here), so there is no double-prefixing of severity labels.
+  const formattedComments = inlineComments.map((c) => ({
+    ...c,
+    body: formatInlineCommentBody(c),
+  }));
+
+  return {
+    markdown,
+    inlineComments: formattedComments,
+    overallVerdict,
+  };
 }
