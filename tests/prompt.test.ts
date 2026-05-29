@@ -71,6 +71,17 @@ describe("formatInlineCommentBody", () => {
     };
     expect(formatInlineCommentBody(comment4)).toBe("**[Kritisk]** Noe annet.");
   });
+
+  it("should preserve bracketed content that is not a severity prefix", () => {
+    const comment: ReviewComment = {
+      filename: "src/main.ts",
+      line: 10,
+      body: "[array indexing] is fast.",
+      severity: "critical",
+    };
+
+    expect(formatInlineCommentBody(comment)).toBe("**[Kritisk]** [array indexing] is fast.");
+  });
 });
 
 describe("buildReviewPrompt", () => {

@@ -20,11 +20,11 @@ export const SEVERITY_LABELS_NO: Record<Severity, string> = {
   nit: "Pirk",
 };
 
-// Strips any existing severity prefix the model may have inserted before we re-apply the
-// canonical one: bold-bracket (`**[...]**`), plain bracket (`[...]`), or `Label:` form.
-// The bracket forms intentionally match any content so typos and unknown labels are still removed.
+// Strips only known severity prefixes the model may have inserted before we re-apply the
+// canonical one: bold-bracket (`**[Critical]**`), plain bracket (`[Critical]`), or `Label:` form.
+// Keep the label set explicit so bracketed comment content like "[array indexing]" is preserved.
 const EXISTING_SEVERITY_PREFIX =
-  /^(?:\*\*\s*\[[^\]]*\]\s*\*\*|\[[^\]]*\]|(?:Kritisk|Alvorlig|Lav|Pirk|Critical|Major|Minor|Nit|Severity)\s*:)\s*/i;
+  /^(?:\*\*\s*\[(?:critical|major|minor|nit|kritisk|alvorlig|lav|pirk)\]\s*\*\*|\[(?:critical|major|minor|nit|kritisk|alvorlig|lav|pirk)\]|(?:critical|major|minor|nit|kritisk|alvorlig|lav|pirk)\s*:)\s*/i;
 
 export function formatInlineCommentBody(comment: { severity: Severity; body: string }): string {
   const label = SEVERITY_LABELS_NO[comment.severity];
