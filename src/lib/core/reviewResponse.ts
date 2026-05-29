@@ -139,6 +139,14 @@ export function parseReviewResponse(text: string): {
     }
   }
 
+  // The verdict is derived purely from comment severities (see deriveVerdictFromComments),
+  // which formatting never touches. Resolve it before formatting so the data flow is explicit:
+  // body formatting is a pure presentation step and plays no part in the verdict.
+  const overallVerdict = resolveVerdict(parsedVerdict, inlineComments);
+
+  // NOTE TO REVIEWERS: this is the single, canonical site where inline comment bodies are
+  // formatted. runReviewSession no longer re-applies formatInlineCommentBody (that call was
+  // removed when this logic moved here), so there is no double-prefixing of severity labels.
   const formattedComments = inlineComments.map((c) => ({
     ...c,
     body: formatInlineCommentBody(c),
@@ -147,6 +155,6 @@ export function parseReviewResponse(text: string): {
   return {
     markdown,
     inlineComments: formattedComments,
-    overallVerdict: resolveVerdict(parsedVerdict, inlineComments),
+    overallVerdict,
   };
 }
