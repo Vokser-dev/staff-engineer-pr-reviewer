@@ -116,7 +116,7 @@ describe("buildReviewPrompt", () => {
 
   it("should append inline comments instruction when requested", () => {
     const prompt = buildReviewPrompt(mockContext, { requestInlineComments: true });
-    expect(prompt).toContain("## Inline-kommentarer (påkrevd for verktøy)");
+    expect(prompt).toContain("## Inline comments (required for tooling)");
     expect(prompt).toContain("inlineComments");
     expect(prompt).toContain("overallVerdict");
   });
@@ -124,13 +124,13 @@ describe("buildReviewPrompt", () => {
   it("should handle empty description", () => {
     const contextWithoutDesc = { ...mockContext, description: "" };
     const prompt = buildReviewPrompt(contextWithoutDesc, { requestInlineComments: false });
-    expect(prompt).toContain("_Ingen beskrivelse gitt._");
+    expect(prompt).toContain("_No description provided._");
   });
 
   it("should handle null description", () => {
     const contextWithoutDesc = { ...mockContext, description: null };
     const prompt = buildReviewPrompt(contextWithoutDesc, { requestInlineComments: false });
-    expect(prompt).toContain("_Ingen beskrivelse gitt._");
+    expect(prompt).toContain("_No description provided._");
   });
 });
 
