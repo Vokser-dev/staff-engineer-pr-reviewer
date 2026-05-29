@@ -302,8 +302,16 @@ export const run = async (options?: {
           commit_sha: targetCommitSha,
         });
 
-        const openPr = prs.data.find((p) => p.state === "open");
-        const matchedPr = openPr ?? prs.data[0];
+        const openPrs = prs.data.filter((p) => p.state === "open");
+        if (openPrs.length > 1) {
+          logError(
+            `Commit ${targetCommitSha} is associated with multiple open PRs (${openPrs
+              .map((p) => `#${p.number}`)
+              .join(", ")}). Please specify which one to review with --pr <number>.`,
+          );
+          process.exit(1);
+        }
+        const matchedPr = openPrs[0] ?? prs.data[0];
 
         if (matchedPr === undefined) {
           logError(
