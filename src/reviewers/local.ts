@@ -1,11 +1,18 @@
 import * as fs from "fs";
 
-import Anthropic from "@anthropic-ai/sdk";
 import * as dotenv from "dotenv";
 import { simpleGit } from "simple-git";
 
-import { reviewPullRequest, ReviewHost, ReviewFunction, runReviewSession } from "@/lib/index";
-import { PullRequestContext, PullRequestFile, ReviewComment } from "@/lib/types";
+import {
+  PullRequestContext,
+  PullRequestFile,
+  ReviewComment,
+  reviewPullRequest,
+  ReviewHost,
+  ReviewFunction,
+  runReviewSession,
+  createLLMClient,
+} from "@/lib/index";
 
 // Load environment variables
 const envPath = fs.existsSync(".env.local") ? ".env.local" : ".env";
@@ -23,10 +30,12 @@ dotenv.config({ path: envPath });
  */
 export async function run(args: string[] = process.argv.slice(2)): Promise<void> {
   const git = simpleGit();
-  const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
-  if (anthropicApiKey == null || anthropicApiKey === "") {
-    console.error("Error: ANTHROPIC_API_KEY environment variable is not set.");
-    console.error("Please set it in your environment or in a .env file.");
+  let llmClient;
+  try {
+    llmClient = createLLMClient();
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    console.error("Please set it in your environment or in a .env / .env.local file.");
     process.exit(1);
   }
 
@@ -183,13 +192,13 @@ export async function run(args: string[] = process.argv.slice(2)): Promise<void>
     files,
   };
 
+  const provider = (process.env.LLM_PROVIDER ?? "anthropic").toLowerCase();
+  const providerLabel = provider === "openai" ? "OpenAI" : "Claude";
   console.log(
     isUncommitted
-      ? `Endringssettet har ${files.length} endret(e) fil(er). Sender til Claude...`
-      : `Commit-en har ${files.length} endret(e) fil(er). Sender til Claude...`,
+      ? `Endringssettet har ${files.length} endret(e) fil(er). Sender til ${providerLabel}...`
+      : `Commit-en har ${files.length} endret(e) fil(er). Sender til ${providerLabel}...`,
   );
-
-  const anthropic = new Anthropic({ apiKey: anthropicApiKey });
 
   const host: ReviewHost = {
     fetchContext() {
@@ -227,7 +236,7 @@ export async function run(args: string[] = process.argv.slice(2)): Promise<void>
   };
 
   const reviewFn: ReviewFunction = (pr, options) => {
-    return reviewPullRequest(anthropic, pr, { inline: options?.requestInlineComments });
+    return reviewPullRequest(llmClient, pr, { inline: options?.requestInlineComments });
   };
 
   try {

@@ -1,5 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
-
 import { MAX_INLINE_COMMENTS } from "@/lib/core/reviewResponse";
 import { PullRequestContext } from "@/lib/types";
 
@@ -136,11 +134,11 @@ Hvis du er i tvil mellom to nivåer, velg det laveste.
 ### Funn
 For hvert funn, bruk dette formatet:
 
-**Fil:** path/to/file.ts  
-**Linje:** 42  
-**Alvorlighet:** critical | major | minor  
-**Hva er galt:** Forklar konkret hva som er feil.  
-**Hvorfor det betyr noe:** Forklar konsekvensen eller risikoen.  
+**Fil:** path/to/file.ts
+**Linje:** 42
+**Alvorlighet:** critical | major | minor
+**Hva er galt:** Forklar konkret hva som er feil.
+**Hvorfor det betyr noe:** Forklar konsekvensen eller risikoen.
 **Forslag til fiks:** Gi en konkret anbefaling.
 
 Hvis det ikke finnes relevante funn: skriv **Ingen funn.** og legg til én kort setning som sier at PR-en ser bra ut, gjerne med en spesifikk grunn (f.eks. "Endringen er liten, godt avgrenset, og holder seg til etablerte mønstre i kodebasen."). Det er helt greit å være positiv når PR-en faktisk er bra.
@@ -292,37 +290,9 @@ export function getThinkingParameters(thinkingEnv?: string): {
 }
 
 export async function runReview(
-  client: Anthropic,
+  client: { complete(system: string, user: string): Promise<string> },
   pr: PullRequestContext,
   options?: { requestInlineComments?: boolean },
 ): Promise<string> {
-  const extraParams = getThinkingParameters(process.env.ANTHROPIC_THINKING);
-
-  const message = await client.messages.create({
-    model:
-      process.env.ANTHROPIC_MODEL != null && process.env.ANTHROPIC_MODEL !== ""
-        ? process.env.ANTHROPIC_MODEL
-        : MODEL,
-    max_tokens: MAX_TOKENS,
-    system: [
-      {
-        type: "text",
-        text: STAFF_ENGINEER_SYSTEM_PROMPT,
-        cache_control: { type: "ephemeral" },
-      },
-    ],
-    messages: [
-      {
-        role: "user",
-        content: buildReviewPrompt(pr, options),
-      },
-    ],
-    ...extraParams,
-  });
-
-  const textBlock = message.content.find((b) => b.type === "text");
-  if (textBlock == null || textBlock.type !== "text") {
-    throw new Error("No text content in response");
-  }
-  return textBlock.text;
+  return client.complete(STAFF_ENGINEER_SYSTEM_PROMPT, buildReviewPrompt(pr, options));
 }

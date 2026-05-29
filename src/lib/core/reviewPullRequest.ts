@@ -1,11 +1,10 @@
-import Anthropic from "@anthropic-ai/sdk";
-
+import { LLMClient } from "@/lib/core/llm";
 import { runReview } from "@/lib/core/prompt";
 import { parseReviewResponse } from "@/lib/core/reviewResponse";
 import { PullRequestContext, ReviewComment, Verdict } from "@/lib/types";
 
 export async function reviewPullRequest(
-  client: Anthropic,
+  client: LLMClient,
   ctx: PullRequestContext,
   opts: { inline?: boolean } = {},
 ): Promise<{

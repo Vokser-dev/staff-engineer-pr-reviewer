@@ -1,6 +1,9 @@
-import Anthropic from "@anthropic-ai/sdk";
-
-import { buildReviewPrompt, getThinkingParameters, runReview } from "@/lib/core/prompt";
+import {
+  buildReviewPrompt,
+  getThinkingParameters,
+  runReview,
+  STAFF_ENGINEER_SYSTEM_PROMPT,
+} from "@/lib/core/prompt";
 import { formatInlineCommentBody, parseReviewResponse } from "@/lib/core/reviewResponse";
 import { PullRequestContext, ReviewComment } from "@/lib/types";
 
@@ -486,113 +489,56 @@ describe("getThinkingParameters", () => {
 });
 
 describe("runReview", () => {
-  let mockClient: {
-    messages: {
-      create: jest.Mock<Promise<unknown>, [Anthropic.MessageCreateParamsNonStreaming]>;
-    };
+  const mockContext: PullRequestContext = {
+    title: "Fix bug",
+    description: "Fixes a minor issue",
+    author: "mortena",
+    baseBranch: "main",
+    headBranch: "feature",
+    files: [],
   };
-  let mockContext: PullRequestContext;
-  const originalEnv = process.env;
 
-  beforeEach(() => {
-    jest.resetModules();
-    process.env = { ...originalEnv };
-    mockContext = {
-      title: "Fix bug",
-      description: "Fixes a minor issue",
-      author: "mortena",
-      baseBranch: "main",
-      headBranch: "feature",
-      files: [],
+  it("should call client.complete with the system prompt and a user prompt derived from the PR context", async () => {
+    const completeMock = jest.fn().mockResolvedValue("En kjempefin PR!");
+    const client = { complete: completeMock, supportsThinking: false };
+
+    await runReview(client, mockContext);
+
+    expect(completeMock).toHaveBeenCalledTimes(1);
+    const [system, user] = completeMock.mock.calls[0] as [string, string];
+    expect(system).toBe(STAFF_ENGINEER_SYSTEM_PROMPT);
+    expect(user).toContain("Fix bug");
+    expect(user).toContain("mortena");
+  });
+
+  it("should include inline comments instruction in user prompt when requestInlineComments is true", async () => {
+    const completeMock = jest.fn().mockResolvedValue("Review");
+    const client = { complete: completeMock, supportsThinking: false };
+
+    await runReview(client, mockContext, { requestInlineComments: true });
+
+    const [, user] = completeMock.mock.calls[0] as [string, string];
+    expect(user).toContain("overallVerdict");
+    expect(user).toContain("inlineComments");
+  });
+
+  it("should not include inline comments instruction when requestInlineComments is false", async () => {
+    const completeMock = jest.fn().mockResolvedValue("Review");
+    const client = { complete: completeMock, supportsThinking: false };
+
+    await runReview(client, mockContext, { requestInlineComments: false });
+
+    const [, user] = completeMock.mock.calls[0] as [string, string];
+    expect(user).not.toContain("overallVerdict");
+  });
+
+  it("should return the text returned by client.complete", async () => {
+    const client = {
+      complete: jest.fn().mockResolvedValue("Gjennomgang ferdig."),
+      supportsThinking: false,
     };
-    mockClient = {
-      messages: {
-        create: jest
-          .fn<Promise<unknown>, [Anthropic.MessageCreateParamsNonStreaming]>()
-          .mockResolvedValue({
-            content: [{ type: "text", text: "En kjempefin PR!" }],
-          }),
-      },
-    };
-  });
 
-  afterEach(() => {
-    process.env = originalEnv;
-  });
-
-  it("should default to standard cache control on system prompt and no thinking/temperature parameters", async () => {
-    await runReview(mockClient as unknown as Anthropic, mockContext);
-
-    expect(mockClient.messages.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        system: [
-          {
-            type: "text",
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            text: expect.any(String),
-            cache_control: { type: "ephemeral" },
-          },
-        ],
-      }),
-    );
-    const args = mockClient.messages.create.mock.calls[0][0];
-    expect(args.thinking).toBeUndefined();
-    expect(args.temperature).toBeUndefined();
-  });
-
-  it("should configure default thinking (budget 2048) and temperature 1.0 when ANTHROPIC_THINKING is enabled (truthy)", async () => {
-    process.env.ANTHROPIC_THINKING = "true";
-    await runReview(mockClient as unknown as Anthropic, mockContext);
-
-    const args = mockClient.messages.create.mock.calls[0][0];
-    expect(args.thinking).toEqual({
-      type: "enabled",
-      budget_tokens: 2048,
-    });
-    expect(args.temperature).toBe(1.0);
-  });
-
-  it("should configure custom thinking budget when ANTHROPIC_THINKING is set to a valid numeric budget", async () => {
-    process.env.ANTHROPIC_THINKING = "4096";
-    await runReview(mockClient as unknown as Anthropic, mockContext);
-
-    const args = mockClient.messages.create.mock.calls[0][0];
-    expect(args.thinking).toEqual({
-      type: "enabled",
-      budget_tokens: 4096,
-    });
-    expect(args.temperature).toBe(1.0);
-  });
-
-  it("should fallback to 2048 if ANTHROPIC_THINKING is set to an invalid budget below 1024", async () => {
-    process.env.ANTHROPIC_THINKING = "500";
-    await runReview(mockClient as unknown as Anthropic, mockContext);
-
-    const args = mockClient.messages.create.mock.calls[0][0];
-    expect(args.thinking).toEqual({
-      type: "enabled",
-      budget_tokens: 2048,
-    });
-    expect(args.temperature).toBe(1.0);
-  });
-
-  it("should not enable thinking if ANTHROPIC_THINKING is set to false, off or 0", async () => {
-    process.env.ANTHROPIC_THINKING = "false";
-    await runReview(mockClient as unknown as Anthropic, mockContext);
-    let args = mockClient.messages.create.mock.calls[0][0];
-    expect(args.thinking).toBeUndefined();
-    expect(args.temperature).toBeUndefined();
-
-    process.env.ANTHROPIC_THINKING = "off";
-    await runReview(mockClient as unknown as Anthropic, mockContext);
-    args = mockClient.messages.create.mock.calls[1][0];
-    expect(args.thinking).toBeUndefined();
-    expect(args.temperature).toBeUndefined();
-
-    process.env.ANTHROPIC_THINKING = "0";
-    await runReview(mockClient as unknown as Anthropic, mockContext);
-    args = mockClient.messages.create.mock.calls[2][0];
-    expect(args.thinking).toBeUndefined();
-    expect(args.temperature).toBeUndefined();
+    const result = await runReview(client, mockContext);
+    expect(result).toBe("Gjennomgang ferdig.");
   });
 });

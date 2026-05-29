@@ -2,12 +2,20 @@ import * as fs from "fs";
 
 import * as core from "@actions/core";
 import * as github from "@actions/github";
-import Anthropic from "@anthropic-ai/sdk";
 import * as dotenv from "dotenv";
 import { simpleGit } from "simple-git";
 
-import { reviewPullRequest, ReviewHost, ReviewFunction, runReviewSession } from "@/lib/index";
-import { PullRequestContext, PullRequestFile, ReviewComment, Verdict } from "@/lib/types";
+import {
+  PullRequestContext,
+  PullRequestFile,
+  ReviewComment,
+  Verdict,
+  reviewPullRequest,
+  ReviewHost,
+  ReviewFunction,
+  runReviewSession,
+  createLLMClient,
+} from "@/lib/index";
 
 type ReviewEvent = "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
 
@@ -157,20 +165,24 @@ export const run = async (options?: {
     dotenv.config({ path: envPath });
   }
 
-  // Get token and api key with fallback to env vars
+  const logInfo = (msg: string) => (isActions ? core.info(msg) : console.log(msg));
+  const logWarn = (msg: string) => (isActions ? core.warning(msg) : console.warn(msg));
+  const logError = (msg: string) => (isActions ? core.setFailed(msg) : console.error(msg));
+
+  // Get token with fallback to env vars
   let token = process.env.GITHUB_TOKEN ?? process.env.INPUT_GITHUB_TOKEN;
   if (token === undefined || token === "") {
     token = isActions ? core.getInput("github-token", { required: false }) : "";
   }
 
-  let anthropicApiKey = process.env.ANTHROPIC_API_KEY ?? process.env.INPUT_ANTHROPIC_API_KEY;
-  if (anthropicApiKey === undefined || anthropicApiKey === "") {
-    anthropicApiKey = isActions ? core.getInput("anthropic-api-key", { required: false }) : "";
+  // Normalize API keys from Action inputs to env vars so the LLM factory can read them.
+  // Locally the keys come from the loaded .env file (or the surrounding shell environment).
+  if (isActions) {
+    const anthropicKey = core.getInput("anthropic-api-key");
+    if (anthropicKey !== "") process.env.ANTHROPIC_API_KEY = anthropicKey;
+    const openaiKey = core.getInput("openai-api-key");
+    if (openaiKey !== "") process.env.OPENAI_API_KEY = openaiKey;
   }
-
-  const logInfo = (msg: string) => (isActions ? core.info(msg) : console.log(msg));
-  const logWarn = (msg: string) => (isActions ? core.warning(msg) : console.warn(msg));
-  const logError = (msg: string) => (isActions ? core.setFailed(msg) : console.error(msg));
 
   if (token === "") {
     logError("GitHub token is required (set GITHUB_TOKEN environment variable).");
@@ -178,8 +190,13 @@ export const run = async (options?: {
     return;
   }
 
-  if (anthropicApiKey === "") {
-    logError("Anthropic API key is required (set ANTHROPIC_API_KEY environment variable).");
+  // Require at least one provider API key; createLLMClient() picks the provider via LLM_PROVIDER.
+  const hasAnthropicKey = (process.env.ANTHROPIC_API_KEY ?? "") !== "";
+  const hasOpenaiKey = (process.env.OPENAI_API_KEY ?? "") !== "";
+  if (!hasAnthropicKey && !hasOpenaiKey) {
+    logError(
+      "Missing required API key: provide either ANTHROPIC_API_KEY or OPENAI_API_KEY.",
+    );
     if (!isActions) process.exit(1);
     return;
   }
@@ -320,7 +337,7 @@ export const run = async (options?: {
     logInfo("Running locally: review will be printed to the console and NOT posted to GitHub.");
   }
 
-  const anthropic = new Anthropic({ apiKey: anthropicApiKey });
+  const llmClient = createLLMClient();
 
   let headSha: string | undefined = undefined;
   let reviewSummary = "";
@@ -377,8 +394,8 @@ export const run = async (options?: {
   };
 
   const reviewFn: ReviewFunction = (pr, options) => {
-    logInfo(`PR has ${pr.files.length} changed file(s). Sending to Claude...`);
-    return reviewPullRequest(anthropic, pr, { inline: options?.requestInlineComments });
+    core.info(`PR has ${pr.files.length} changed file(s). Sending to LLM...`);
+    return reviewPullRequest(llmClient, pr, { inline: options?.requestInlineComments });
   };
 
   try {
