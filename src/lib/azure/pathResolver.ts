@@ -60,11 +60,27 @@ export function buildFilePatch(
   return hasChanges ? patch : undefined;
 }
 
+function warnOnMissingAzureContent(
+  warn: (msg: string) => void,
+  filename: string,
+  commitId: string,
+  side: "source" | "target",
+): void {
+  // `undefined` is an intentional retrieval signal for binary/oversized/missing
+  // content; warn here so unexpected fetch failures do not look like empty diffs.
+  warn(
+    `Azure diff content missing for ${filename} at ${side} commit ${commitId}; ` +
+      `patch and line counts may be unavailable. This can be expected for ` +
+      `binary/oversized files, or indicate that content retrieval failed.`,
+  );
+}
+
 export async function parseAzureDiff(
   changes: AzureDiffChange[],
   sourceCommitId: string,
   targetCommitId: string,
   retrieveFileContent: (path: string, commitId: string) => Promise<string | undefined>,
+  warn: (msg: string) => void = console.warn,
 ): Promise<PullRequestFile[]> {
   const blobChanges = changes.filter(
     (c) => c.item.isFolder !== true && c.item.gitObjectType !== "tree",
@@ -77,6 +93,9 @@ export async function parseAzureDiff(
 
       if (status === "added") {
         const content = await retrieveFileContent(filename, sourceCommitId);
+        if (content === undefined) {
+          warnOnMissingAzureContent(warn, filename, sourceCommitId, "source");
+        }
         const patch =
           content != null ? buildFilePatch("/dev/null", filename, "", content) : undefined;
         return {
@@ -90,6 +109,9 @@ export async function parseAzureDiff(
 
       if (status === "removed") {
         const content = await retrieveFileContent(filename, targetCommitId);
+        if (content === undefined) {
+          warnOnMissingAzureContent(warn, filename, targetCommitId, "target");
+        }
         const patch =
           content != null ? buildFilePatch(filename, "/dev/null", content, "") : undefined;
         return {
@@ -105,6 +127,13 @@ export async function parseAzureDiff(
         retrieveFileContent(change.originalPath ?? filename, targetCommitId),
         retrieveFileContent(filename, sourceCommitId),
       ]);
+
+      if (oldContent === undefined) {
+        warnOnMissingAzureContent(warn, change.originalPath ?? filename, targetCommitId, "target");
+      }
+      if (newContent === undefined) {
+        warnOnMissingAzureContent(warn, filename, sourceCommitId, "source");
+      }
 
       let additions = 0;
       let deletions = 0;

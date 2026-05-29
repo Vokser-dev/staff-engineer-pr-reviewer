@@ -171,4 +171,77 @@ describe("parseAzureDiff", () => {
     expect(retrieveFileContent).toHaveBeenCalledWith("src/modified.ts", targetCommitId);
     expect(retrieveFileContent).toHaveBeenCalledWith("src/modified.ts", sourceCommitId);
   });
+
+  it("should warn when Azure content retrieval returns undefined", async () => {
+    const changes: AzureDiffChange[] = [
+      {
+        item: { path: "src/new-file.ts", isFolder: false, gitObjectType: "blob" },
+        changeType: "add",
+      },
+      {
+        item: { path: "src/old-file.ts", isFolder: false, gitObjectType: "blob" },
+        changeType: "delete",
+      },
+      {
+        item: { path: "src/modified.ts", isFolder: false, gitObjectType: "blob" },
+        changeType: "edit",
+      },
+    ];
+
+    const retrieveFileContent = jest.fn(() => Promise.resolve(undefined));
+    const warn = jest.fn();
+
+    const result = await parseAzureDiff(
+      changes,
+      sourceCommitId,
+      targetCommitId,
+      retrieveFileContent,
+      warn,
+    );
+
+    expect(result).toEqual([
+      {
+        filename: "src/new-file.ts",
+        status: "added",
+        additions: 0,
+        deletions: 0,
+        patch: undefined,
+      },
+      {
+        filename: "src/old-file.ts",
+        status: "removed",
+        additions: 0,
+        deletions: 0,
+        patch: undefined,
+      },
+      {
+        filename: "src/modified.ts",
+        status: "modified",
+        additions: 0,
+        deletions: 0,
+        patch: undefined,
+      },
+    ]);
+    expect(warn).toHaveBeenCalledTimes(4);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "Azure diff content missing for src/new-file.ts at source commit src123",
+      ),
+    );
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "Azure diff content missing for src/old-file.ts at target commit tgt456",
+      ),
+    );
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "Azure diff content missing for src/modified.ts at target commit tgt456",
+      ),
+    );
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "Azure diff content missing for src/modified.ts at source commit src123",
+      ),
+    );
+  });
 });
