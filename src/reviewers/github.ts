@@ -236,7 +236,8 @@ export const run = async (options?: {
       const parts = options.repo.split("/");
       if (parts.length !== 2) {
         logError(`Invalid repository format: "${options.repo}". Expected "owner/repo".`);
-        process.exit(1);
+        if (!isActions) process.exit(1);
+        return;
       }
       owner = parts[0];
       repo = parts[1];
@@ -255,7 +256,8 @@ export const run = async (options?: {
           logError(
             "Could not find 'origin' remote URL. Please specify repository using --repo <owner/repo>.",
           );
-          process.exit(1);
+          if (!isActions) process.exit(1);
+          return;
         }
         const cleanUrl = origin.replace(/\.git$/, "");
         const match = cleanUrl.match(/([^/:]+)\/([^/:]+)$/);
@@ -263,7 +265,8 @@ export const run = async (options?: {
           logError(
             `Could not parse owner/repo from remote URL: "${origin}". Please specify repository using --repo <owner/repo>.`,
           );
-          process.exit(1);
+          if (!isActions) process.exit(1);
+          return;
         }
         owner = match[1];
         repo = match[2];
@@ -271,7 +274,8 @@ export const run = async (options?: {
         logError(
           `Error detecting git remote: ${err instanceof Error ? err.message : String(err)}. Please specify repository using --repo <owner/repo>.`,
         );
-        process.exit(1);
+        if (!isActions) process.exit(1);
+        return;
       }
     }
 
@@ -284,7 +288,8 @@ export const run = async (options?: {
         logError(
           `Could not resolve git ref "${ref}": ${err instanceof Error ? err.message : String(err)}`,
         );
-        process.exit(1);
+        if (!isActions) process.exit(1);
+        return;
       }
     }
 
@@ -307,7 +312,8 @@ export const run = async (options?: {
               .map((p) => `#${p.number}`)
               .join(", ")}). Please specify which one to review with --pr <number>.`,
           );
-          process.exit(1);
+          if (!isActions) process.exit(1);
+          return;
         }
         const matchedPr = openPrs[0] ?? prs.data[0];
 
@@ -315,7 +321,8 @@ export const run = async (options?: {
           logError(
             `No Pull Request found on GitHub associated with commit ${targetCommitSha}. Please ensure the commit has been pushed and a PR is open, or specify the PR number using --pr.`,
           );
-          process.exit(1);
+          if (!isActions) process.exit(1);
+          return;
         }
 
         pullNumber = matchedPr.number;
@@ -326,7 +333,8 @@ export const run = async (options?: {
             err instanceof Error ? err.message : String(err)
           }`,
         );
-        process.exit(1);
+        if (!isActions) process.exit(1);
+        return;
       }
     }
   }

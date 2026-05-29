@@ -160,6 +160,7 @@ Dette ser bra ut.
   });
 
   it("should handle malformed JSON inside a fence gracefully", () => {
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
     const response = `Markdown.
 \`\`\`json
 {
@@ -172,9 +173,14 @@ Dette ser bra ut.
   ]
 }
 \`\`\``;
-    const { markdown, inlineComments } = parseReviewResponse(response);
+    const { markdown, inlineComments, overallVerdict } = parseReviewResponse(response);
     expect(markdown).toBe("Markdown.");
     expect(inlineComments).toEqual([]);
+    expect(overallVerdict).toBe("comment");
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to parse review JSON payload"),
+    );
+    warnSpy.mockRestore();
   });
 
   it("should accept critical, major, and minor severities but filter nit", () => {

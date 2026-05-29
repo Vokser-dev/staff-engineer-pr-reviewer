@@ -132,10 +132,11 @@ export function parseReviewResponse(text: string): {
       inlineComments = payload.inlineComments;
     } catch (error) {
       console.warn(
-        `Failed to parse review JSON payload; falling back to comment-derived verdict: ${
+        `Failed to parse review JSON payload; falling back to comment verdict: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
+      parsedVerdict = "comment";
     }
   }
 

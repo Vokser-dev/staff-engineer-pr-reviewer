@@ -10,7 +10,7 @@ export async function reviewPullRequest(
 ): Promise<{
   markdown: string;
   inlineComments: ReviewComment[];
-  overallVerdict?: Verdict;
+  overallVerdict: Verdict;
 }> {
   const inline = opts.inline ?? false;
   const reviewText = await runReview(client, ctx, { requestInlineComments: inline });
