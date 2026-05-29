@@ -1,11 +1,9 @@
 import OpenAI from "openai";
 
-import { LLMClient } from "@/lib/core/llm";
-
 const OPENAI_DEFAULT_MODEL = "gpt-4o";
 const OPENAI_MAX_TOKENS = 8192;
 
-export class OpenAILLMClient implements LLMClient {
+export class OpenAILLMClient {
   readonly supportsThinking = false;
   private client: OpenAI;
 

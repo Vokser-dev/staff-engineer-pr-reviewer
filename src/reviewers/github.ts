@@ -125,6 +125,14 @@ export const run: ReviewerPlugin["run"] = async (): Promise<void> => {
   const openaiKey = core.getInput("openai-api-key");
   if (openaiKey !== "") process.env.OPENAI_API_KEY = openaiKey;
 
+  // If no API key is provided, fail the action
+  if (anthropicKey === "" && openaiKey === "") {
+    core.setFailed(
+      "Missing required API key: provide either 'anthropic-api-key' or 'openai-api-key'",
+    );
+    return;
+  }
+
   const octokit = github.getOctokit(token);
   const context = github.context;
 

@@ -1,9 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 
-import { LLMClient } from "@/lib/core/llm";
 import { getThinkingParameters, MAX_TOKENS, MODEL } from "@/lib/core/prompt";
 
-export class AnthropicLLMClient implements LLMClient {
+export class AnthropicLLMClient {
   readonly supportsThinking = true;
   private client: Anthropic;
 
