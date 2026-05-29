@@ -1,6 +1,7 @@
 import { LLMClient } from "@/lib/core/llm";
-import { PullRequestContext, ReviewComment, runReview } from "@/lib/core/prompt";
+import { runReview } from "@/lib/core/prompt";
 import { parseReviewResponse } from "@/lib/core/reviewResponse";
+import { PullRequestContext, ReviewComment, Verdict } from "@/lib/types";
 
 export async function reviewPullRequest(
   client: LLMClient,
@@ -9,7 +10,7 @@ export async function reviewPullRequest(
 ): Promise<{
   markdown: string;
   inlineComments: ReviewComment[];
-  overallVerdict?: "approve" | "comment" | "request-changes";
+  overallVerdict: Verdict;
 }> {
   const inline = opts.inline ?? false;
   const reviewText = await runReview(client, ctx, { requestInlineComments: inline });

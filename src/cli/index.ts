@@ -18,11 +18,35 @@ const main = defineCommand({
     doctor: () => import("./commands/doctor").then((m) => m.default),
     github: defineCommand({
       meta: {
-        description: "Run the GitHub Actions reviewer (used inside a workflow)",
+        description:
+          "Run the GitHub Actions reviewer (used inside a workflow or triggered from CLI)",
       },
-      run: async () => {
+      args: {
+        ref: {
+          type: "positional",
+          description: "Optional git revision or SHA/ref to review (if triggering from CLI)",
+          required: false,
+        },
+        repo: {
+          type: "string",
+          description:
+            "Optional repository 'owner/repo' (if triggering from CLI, defaults to auto-detecting from git remote)",
+          required: false,
+        },
+        pr: {
+          type: "string",
+          description:
+            "Optional PR number (if triggering from CLI, defaults to finding PR associated with the commit)",
+          required: false,
+        },
+      },
+      run: async (ctx) => {
         const { run } = await import("@/reviewers/github");
-        await run();
+        await run({
+          ref: ctx.args.ref,
+          repo: ctx.args.repo,
+          pr: ctx.args.pr,
+        });
       },
     }),
     azure: defineCommand({

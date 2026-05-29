@@ -1,36 +1,9 @@
+import { MAX_INLINE_COMMENTS } from "@/lib/core/reviewResponse";
+import { PullRequestContext } from "@/lib/types";
+
 export const MODEL = "claude-haiku-4-5-20251001" as const;
 
 export const MAX_TOKENS = 8192;
-
-export interface PullRequestFile {
-  filename: string;
-  status: "added" | "modified" | "removed" | "renamed" | (string & {});
-  additions: number;
-  deletions: number;
-  patch?: string;
-}
-
-export interface PullRequestContext {
-  title: string;
-  description: string | null;
-  author: string;
-  baseBranch: string;
-  headBranch: string;
-  files: PullRequestFile[];
-}
-
-export interface ReviewResult {
-  summary: string;
-  comments: ReviewComment[];
-  overallVerdict: "approve" | "request-changes" | "comment";
-}
-
-export interface ReviewComment {
-  filename: string;
-  line?: number;
-  body: string;
-  severity: "critical" | "major" | "minor" | "nit";
-}
 
 export const STAFF_ENGINEER_SYSTEM_PROMPT = `Du er en erfaren full stack staff engineer som gjennomgår en pull request.
 
@@ -161,11 +134,11 @@ Hvis du er i tvil mellom to nivåer, velg det laveste.
 ### Funn
 For hvert funn, bruk dette formatet:
 
-**Fil:** path/to/file.ts  
-**Linje:** 42  
-**Alvorlighet:** critical | major | minor  
-**Hva er galt:** Forklar konkret hva som er feil.  
-**Hvorfor det betyr noe:** Forklar konsekvensen eller risikoen.  
+**Fil:** path/to/file.ts
+**Linje:** 42
+**Alvorlighet:** critical | major | minor
+**Hva er galt:** Forklar konkret hva som er feil.
+**Hvorfor det betyr noe:** Forklar konsekvensen eller risikoen.
 **Forslag til fiks:** Gi en konkret anbefaling.
 
 Hvis det ikke finnes relevante funn: skriv **Ingen funn.** og legg til én kort setning som sier at PR-en ser bra ut, gjerne med en spesifikk grunn (f.eks. "Endringen er liten, godt avgrenset, og holder seg til etablerte mønstre i kodebasen."). Det er helt greit å være positiv når PR-en faktisk er bra.
@@ -176,8 +149,6 @@ Hvis det ikke finnes relevante funn: skriv **Ingen funn.** og legg til én kort 
 Én av: **GODKJENN** · **GODKJENN MED SMÅTING** · **BE OM ENDRINGER** · **BLOKKER**
 
 Én kort setning som begrunner valget.`;
-
-export const MAX_INLINE_COMMENTS = 8;
 
 const INLINE_COMMENTS_INSTRUCTION = `
 ---
@@ -289,18 +260,6 @@ Hopp over alt annet.
 Skriv hele reviewen på **norsk (bokmål)**.${
     options?.requestInlineComments === true ? INLINE_COMMENTS_INSTRUCTION : ""
   }`;
-}
-
-const SEVERITY_LABELS_NO: Record<ReviewComment["severity"], string> = {
-  critical: "Kritisk",
-  major: "Alvorlig",
-  minor: "Lav",
-  nit: "Pirk",
-};
-
-export function formatInlineCommentBody(comment: ReviewComment): string {
-  const label = SEVERITY_LABELS_NO[comment.severity] ?? comment.severity;
-  return `**[${label}]** ${comment.body}`;
 }
 
 export function getThinkingParameters(thinkingEnv?: string): {

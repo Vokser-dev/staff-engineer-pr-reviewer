@@ -1,13 +1,11 @@
 import {
   buildReviewPrompt,
-  formatInlineCommentBody,
   getThinkingParameters,
-  PullRequestContext,
-  ReviewComment,
   runReview,
   STAFF_ENGINEER_SYSTEM_PROMPT,
 } from "@/lib/core/prompt";
-import { parseReviewResponse } from "@/lib/core/reviewResponse";
+import { formatInlineCommentBody, parseReviewResponse } from "@/lib/core/reviewResponse";
+import { PullRequestContext, ReviewComment } from "@/lib/types";
 
 describe("formatInlineCommentBody", () => {
   it("should format critical severity correctly in Norwegian", () => {
@@ -38,6 +36,51 @@ describe("formatInlineCommentBody", () => {
       severity: "minor",
     } as unknown as ReviewComment;
     expect(formatInlineCommentBody(comment)).toBe("**[Lav]** Noe annet.");
+  });
+
+  it("should strip existing prefixes and avoid double-prefixing", () => {
+    const comment1: ReviewComment = {
+      filename: "src/main.ts",
+      line: 10,
+      body: "**[Lav]** Noe annet.",
+      severity: "minor",
+    };
+    expect(formatInlineCommentBody(comment1)).toBe("**[Lav]** Noe annet.");
+
+    const comment2: ReviewComment = {
+      filename: "src/main.ts",
+      line: 10,
+      body: "**[Alvorlig]** Noe annet.",
+      severity: "minor",
+    };
+    expect(formatInlineCommentBody(comment2)).toBe("**[Lav]** Noe annet.");
+
+    const comment3: ReviewComment = {
+      filename: "src/main.ts",
+      line: 10,
+      body: "[Critical] Noe annet.",
+      severity: "critical",
+    };
+    expect(formatInlineCommentBody(comment3)).toBe("**[Kritisk]** Noe annet.");
+
+    const comment4: ReviewComment = {
+      filename: "src/main.ts",
+      line: 10,
+      body: "Kritisk: Noe annet.",
+      severity: "critical",
+    };
+    expect(formatInlineCommentBody(comment4)).toBe("**[Kritisk]** Noe annet.");
+  });
+
+  it("should preserve bracketed content that is not a severity prefix", () => {
+    const comment: ReviewComment = {
+      filename: "src/main.ts",
+      line: 10,
+      body: "[array indexing] is fast.",
+      severity: "critical",
+    };
+
+    expect(formatInlineCommentBody(comment)).toBe("**[Kritisk]** [array indexing] is fast.");
   });
 });
 
@@ -116,7 +159,7 @@ Dette ser bra ut.
       filename: "src/auth.ts",
       line: 42,
       severity: "critical",
-      body: "Bruk en sikrere algoritme her.",
+      body: "**[Kritisk]** Bruk en sikrere algoritme her.",
     });
   });
 
@@ -128,6 +171,7 @@ Dette ser bra ut.
   });
 
   it("should handle malformed JSON inside a fence gracefully", () => {
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
     const response = `Markdown.
 \`\`\`json
 {
@@ -140,9 +184,14 @@ Dette ser bra ut.
   ]
 }
 \`\`\``;
-    const { markdown, inlineComments } = parseReviewResponse(response);
+    const { markdown, inlineComments, overallVerdict } = parseReviewResponse(response);
     expect(markdown).toBe("Markdown.");
     expect(inlineComments).toEqual([]);
+    expect(overallVerdict).toBe("comment");
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to parse review JSON payload"),
+    );
+    warnSpy.mockRestore();
   });
 
   it("should accept critical, major, and minor severities but filter nit", () => {
@@ -312,6 +361,113 @@ Andre markdown.
     const { markdown, inlineComments } = parseReviewResponse("");
     expect(markdown).toBe("");
     expect(inlineComments).toEqual([]);
+  });
+
+  describe("overallVerdict consistency and derivation", () => {
+    it("should force verdict to request-changes if critical or major comments exist", () => {
+      const response = `Review.
+\`\`\`json
+{
+  "overallVerdict": "approve",
+  "inlineComments": [
+    {
+      "file": "src/auth.ts",
+      "line": 42,
+      "severity": "critical",
+      "body": "Feil"
+    }
+  ]
+}
+\`\`\``;
+      const { overallVerdict } = parseReviewResponse(response);
+      expect(overallVerdict).toBe("request-changes");
+    });
+
+    it("should override request-changes to comment if only minor comments exist", () => {
+      const response = `Review.
+\`\`\`json
+{
+  "overallVerdict": "request-changes",
+  "inlineComments": [
+    {
+      "file": "src/auth.ts",
+      "line": 42,
+      "severity": "minor",
+      "body": "Pirk"
+    }
+  ]
+}
+\`\`\``;
+      const { overallVerdict } = parseReviewResponse(response);
+      expect(overallVerdict).toBe("comment");
+    });
+
+    it("should override request-changes to approve if no comments exist", () => {
+      const response = `Review.
+\`\`\`json
+{
+  "overallVerdict": "request-changes",
+  "inlineComments": []
+}
+\`\`\``;
+      const { overallVerdict } = parseReviewResponse(response);
+      expect(overallVerdict).toBe("approve");
+    });
+
+    it("should derive verdict if not provided or invalid", () => {
+      // 1. Empty comments -> approve
+      const resp1 = `Review.
+\`\`\`json
+{
+  "inlineComments": []
+}
+\`\`\``;
+      expect(parseReviewResponse(resp1).overallVerdict).toBe("approve");
+
+      // 2. Only minor comments -> comment
+      const resp2 = `Review.
+\`\`\`json
+{
+  "inlineComments": [
+    { "file": "src/auth.ts", "line": 42, "severity": "minor", "body": "Pirk" }
+  ]
+}
+\`\`\``;
+      expect(parseReviewResponse(resp2).overallVerdict).toBe("comment");
+
+      // 3. Critical/Major comments -> request-changes
+      const resp3 = `Review.
+\`\`\`json
+{
+  "inlineComments": [
+    { "file": "src/auth.ts", "line": 42, "severity": "major", "body": "Alvorlig" }
+  ]
+}
+\`\`\``;
+      expect(parseReviewResponse(resp3).overallVerdict).toBe("request-changes");
+    });
+
+    it("should preserve valid and consistent overallVerdict", () => {
+      const response = `Review.
+\`\`\`json
+{
+  "overallVerdict": "approve",
+  "inlineComments": []
+}
+\`\`\``;
+      expect(parseReviewResponse(response).overallVerdict).toBe("approve");
+
+      const response2 = `Review.
+\`\`\`json
+{
+  "overallVerdict": "comment",
+  "inlineComments": [
+    { "file": "src/auth.ts", "line": 42, "severity": "minor", "body": "Pirk" }
+  ]
+}
+\`\`\``;
+      expect(parseReviewResponse(response2).overallVerdict).toBe("comment");
+    });
   });
 });
 
