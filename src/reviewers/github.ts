@@ -24,6 +24,16 @@ interface PullRequestData {
   headSha: string;
 }
 
+export function parseGitHubPullRequestNumber(value: string): number | undefined {
+  const trimmed = value.trim();
+  if (!/^[1-9]\d*$/.test(trimmed)) {
+    return undefined;
+  }
+
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
+}
+
 async function getPullRequestData(
   octokit: ReturnType<typeof github.getOctokit>,
   owner: string,
@@ -155,7 +165,7 @@ async function postFallbackComment(
 export const run = async (options?: {
   ref?: string;
   repo?: string;
-  pr?: number;
+  pr?: string;
 }): Promise<void> => {
   const isActions = process.env.GITHUB_ACTIONS === "true";
 
@@ -295,7 +305,13 @@ export const run = async (options?: {
 
     // 3. Determine pull request number
     if (options?.pr !== undefined) {
-      pullNumber = options.pr;
+      const prNumber = parseGitHubPullRequestNumber(options.pr);
+      if (prNumber === undefined) {
+        logError(`Invalid PR number: "${options.pr}". Must be a positive integer.`);
+        if (!isActions) process.exit(1);
+        return;
+      }
+      pullNumber = prNumber;
     } else if (targetCommitSha !== undefined && targetCommitSha !== "") {
       logInfo(`Finding Pull Request associated with commit: ${targetCommitSha}`);
       try {

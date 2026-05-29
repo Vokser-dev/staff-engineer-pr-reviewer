@@ -45,7 +45,7 @@ const main = defineCommand({
         await run({
           ref: ctx.args.ref,
           repo: ctx.args.repo,
-          pr: ctx.args.pr !== undefined ? parseInt(ctx.args.pr, 10) : undefined,
+          pr: ctx.args.pr,
         });
       },
     }),
