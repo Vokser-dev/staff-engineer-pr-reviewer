@@ -77,12 +77,40 @@ export function filterInlineComments(
   return kept;
 }
 
+/**
+ * Warns when changed files arrive without diff content. A missing `patch` can be
+ * legitimate (binary/oversized files) but it can also mean file content could not be
+ * fetched (network/permission failure), in which case the model reviews blind. We surface
+ * this rather than silently sending empty diffs; the all-files-missing case gets a stronger
+ * warning since it most likely indicates a systemic fetch failure.
+ */
+export function warnOnMissingDiffs(files: PullRequestFile[], warn?: (msg: string) => void): void {
+  const missing = files.filter((f) => f.patch == null || f.patch === "");
+  if (missing.length === 0) return;
+
+  const names = missing.map((f) => f.filename).join(", ");
+  if (missing.length === files.length) {
+    warn?.(
+      `None of the ${files.length} changed file(s) have diff content (${names}); the review ` +
+        `will run without diffs. This usually means the files are binary/oversized or their ` +
+        `content could not be fetched.`,
+    );
+  } else {
+    warn?.(
+      `${missing.length} of ${files.length} changed file(s) have no diff content and will be ` +
+        `reviewed without diffs: ${names}.`,
+    );
+  }
+}
+
 export async function runReviewSession(
   host: ReviewHost,
   reviewFn: ReviewFunction,
   opts: { inline: boolean },
 ): Promise<void> {
   const prContext = await host.fetchContext();
+
+  warnOnMissingDiffs(prContext.files, host.warn?.bind(host));
 
   const { markdown, inlineComments, overallVerdict } = await reviewFn(prContext, {
     requestInlineComments: opts.inline,

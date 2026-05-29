@@ -3,6 +3,7 @@ import {
   extractAddedLines,
   buildAddedLinesIndex,
   filterInlineComments,
+  warnOnMissingDiffs,
   runReviewSession,
   ReviewHost,
   ReviewFunction,
@@ -105,6 +106,56 @@ describe("Review Session Orchestrator", () => {
       });
 
       expect(warnMock).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe("warnOnMissingDiffs", () => {
+    const withPatch = {
+      filename: "with.ts",
+      status: "modified" as const,
+      additions: 1,
+      deletions: 0,
+      patch: "@@ -1,1 +1,2 @@\n unchanged\n+added",
+    };
+    const noPatch = {
+      filename: "binary.png",
+      status: "modified" as const,
+      additions: 0,
+      deletions: 0,
+      patch: undefined,
+    };
+    const emptyPatch = { ...noPatch, filename: "empty.ts", patch: "" };
+
+    it("should not warn when every file has diff content", () => {
+      const warn = jest.fn();
+      warnOnMissingDiffs([withPatch], warn);
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it("should warn about the subset of files missing diff content", () => {
+      const messages: string[] = [];
+      const warn = jest.fn((m: string) => void messages.push(m));
+      warnOnMissingDiffs([withPatch, noPatch], warn);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(messages[0]).toContain("1 of 2");
+      expect(messages[0]).toContain("binary.png");
+      expect(messages[0]).not.toContain("with.ts");
+    });
+
+    it("should emit a stronger warning when no file has any diff content", () => {
+      const messages: string[] = [];
+      const warn = jest.fn((m: string) => void messages.push(m));
+      warnOnMissingDiffs([noPatch, emptyPatch], warn);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(messages[0]).toContain("None of the 2");
+      expect(messages[0]).toContain("binary.png");
+      expect(messages[0]).toContain("empty.ts");
+    });
+
+    it("should be a no-op when there are no files", () => {
+      const warn = jest.fn();
+      warnOnMissingDiffs([], warn);
+      expect(warn).not.toHaveBeenCalled();
     });
   });
 
@@ -229,6 +280,40 @@ describe("Review Session Orchestrator", () => {
       await runReviewSession(host, reviewFn, { inline: true });
 
       expect(published[0].verdict).toBe("request-changes");
+    });
+
+    it("should warn via the host when fetched files have no diff content", async () => {
+      const noDiffContext: PullRequestContext = {
+        ...mockContext,
+        files: [
+          {
+            filename: "data.bin",
+            status: "modified",
+            additions: 0,
+            deletions: 0,
+            patch: undefined,
+          },
+        ],
+      };
+      const messages: string[] = [];
+      const warn = jest.fn((m: string) => void messages.push(m));
+      const host: ReviewHost = {
+        fetchContext() {
+          return Promise.resolve(noDiffContext);
+        },
+        publishReview() {
+          return Promise.resolve();
+        },
+        warn,
+      };
+
+      const reviewFn: ReviewFunction = () =>
+        Promise.resolve({ markdown: "Sammendrag", inlineComments: [], overallVerdict: "approve" });
+
+      await runReviewSession(host, reviewFn, { inline: true });
+
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(messages[0]).toContain("data.bin");
     });
 
     it("should derive verdict from filtered comments so off-diff comments do not block merge", async () => {
