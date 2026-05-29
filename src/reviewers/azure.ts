@@ -80,6 +80,48 @@ async function azurePost(url: string, pat: string, body: unknown): Promise<void>
   }
 }
 
+async function azurePut(url: string, pat: string, body: unknown): Promise<void> {
+  const response = await fetch(url, {
+    method: "PUT",
+    headers: {
+      Authorization: authHeader(pat),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Azure DevOps PUT error ${response.status}: ${url}\n${text}`);
+  }
+}
+
+interface AzureConnectionData {
+  authenticatedUser: { id: string };
+}
+
+async function getCurrentUserId(organization: string, pat: string): Promise<string> {
+  const url = `https://dev.azure.com/${organization}/_apis/connectionData`;
+  const data = await azureGet<AzureConnectionData>(url, pat);
+  return data.authenticatedUser.id;
+}
+
+const ADO_VOTE: Partial<Record<"approve" | "comment" | "request-changes", number>> = {
+  approve: 10,
+  "request-changes": -10,
+};
+
+async function postVote(
+  config: AzureConfig,
+  verdict: "approve" | "comment" | "request-changes",
+): Promise<void> {
+  const vote = ADO_VOTE[verdict];
+  if (vote == null) return;
+
+  const userId = await getCurrentUserId(config.organization, config.personalAccessToken);
+  const url = `https://dev.azure.com/${config.organization}/${config.project}/_apis/git/repositories/${config.repositoryId}/pullRequests/${config.pullRequestId}/reviewers/${userId}?${API_VERSION}`;
+  await azurePut(url, config.personalAccessToken, { vote });
+}
+
 interface AzurePR {
   title: string;
   description: string;
@@ -358,9 +400,17 @@ export const run: ReviewerPlugin["run"] = async (): Promise<void> => {
       }
       return ctx;
     },
-    async publishReview(summaryMarkdown, inlineComments, _verdict) {
+    async publishReview(summaryMarkdown, inlineComments, verdict) {
       await postReviewSummary(config, summaryMarkdown);
       await postInlineComments(config, changedFiles, inlineComments);
+      try {
+        await postVote(config, verdict);
+        if (verdict !== "comment") {
+          console.log(`Vote posted: ${verdict}`);
+        }
+      } catch (err) {
+        console.warn("Failed to post vote:", err);
+      }
     },
   };
 
