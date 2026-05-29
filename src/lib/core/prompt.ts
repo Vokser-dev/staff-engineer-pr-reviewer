@@ -1,5 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
-
 export const MODEL = "claude-haiku-4-5-20251001" as const;
 
 export const MAX_TOKENS = 8192;
@@ -333,37 +331,9 @@ export function getThinkingParameters(thinkingEnv?: string): {
 }
 
 export async function runReview(
-  client: Anthropic,
+  client: { complete(system: string, user: string): Promise<string> },
   pr: PullRequestContext,
   options?: { requestInlineComments?: boolean },
 ): Promise<string> {
-  const extraParams = getThinkingParameters(process.env.ANTHROPIC_THINKING);
-
-  const message = await client.messages.create({
-    model:
-      process.env.ANTHROPIC_MODEL != null && process.env.ANTHROPIC_MODEL !== ""
-        ? process.env.ANTHROPIC_MODEL
-        : MODEL,
-    max_tokens: MAX_TOKENS,
-    system: [
-      {
-        type: "text",
-        text: STAFF_ENGINEER_SYSTEM_PROMPT,
-        cache_control: { type: "ephemeral" },
-      },
-    ],
-    messages: [
-      {
-        role: "user",
-        content: buildReviewPrompt(pr, options),
-      },
-    ],
-    ...extraParams,
-  });
-
-  const textBlock = message.content.find((b) => b.type === "text");
-  if (textBlock == null || textBlock.type !== "text") {
-    throw new Error("No text content in response");
-  }
-  return textBlock.text;
+  return client.complete(STAFF_ENGINEER_SYSTEM_PROMPT, buildReviewPrompt(pr, options));
 }

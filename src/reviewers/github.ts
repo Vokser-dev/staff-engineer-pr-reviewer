@@ -1,6 +1,5 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
-import Anthropic from "@anthropic-ai/sdk";
 
 import {
   PullRequestContext,
@@ -11,6 +10,7 @@ import {
   ReviewHost,
   ReviewFunction,
   runReviewSession,
+  createLLMClient,
 } from "@/lib/index";
 
 type ReviewEvent = "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
@@ -118,9 +118,12 @@ async function postFallbackComment(
 
 export const run: ReviewerPlugin["run"] = async (): Promise<void> => {
   const token = core.getInput("github-token", { required: true });
-  const anthropicApiKey = core.getInput("anthropic-api-key", {
-    required: true,
-  });
+
+  // Normalize API keys from Action inputs to env vars so the factory can read them
+  const anthropicKey = core.getInput("anthropic-api-key");
+  if (anthropicKey !== "") process.env.ANTHROPIC_API_KEY = anthropicKey;
+  const openaiKey = core.getInput("openai-api-key");
+  if (openaiKey !== "") process.env.OPENAI_API_KEY = openaiKey;
 
   const octokit = github.getOctokit(token);
   const context = github.context;
@@ -140,7 +143,7 @@ export const run: ReviewerPlugin["run"] = async (): Promise<void> => {
 
   core.info(`Reviewing PR #${pullNumber} in ${owner}/${repo}`);
 
-  const anthropic = new Anthropic({ apiKey: anthropicApiKey });
+  const llmClient = createLLMClient();
 
   let headSha: string | undefined = undefined;
   let reviewSummary = "";
@@ -188,8 +191,8 @@ export const run: ReviewerPlugin["run"] = async (): Promise<void> => {
   };
 
   const reviewFn: ReviewFunction = (pr, options) => {
-    core.info(`PR has ${pr.files.length} changed file(s). Sending to Claude...`);
-    return reviewPullRequest(anthropic, pr, { inline: options?.requestInlineComments });
+    core.info(`PR has ${pr.files.length} changed file(s). Sending to LLM...`);
+    return reviewPullRequest(llmClient, pr, { inline: options?.requestInlineComments });
   };
 
   await runReviewSession(host, reviewFn, { inline: true });

@@ -1,4 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { createTwoFilesPatch } from "diff";
 
 import {
@@ -16,6 +15,7 @@ import {
   runReviewSession,
   reviewPullRequest,
   ReviewerPlugin,
+  createLLMClient,
 } from "@/lib/index";
 
 const API_VERSION = "api-version=7.1";
@@ -27,7 +27,6 @@ interface AzureConfig {
   repositoryId: string;
   pullRequestId: number;
   personalAccessToken: string;
-  anthropicApiKey: string;
 }
 
 function loadConfig(): AzureConfig {
@@ -44,7 +43,6 @@ function loadConfig(): AzureConfig {
     repositoryId: required("AZURE_DEVOPS_REPO_ID"),
     pullRequestId: parseInt(required("AZURE_DEVOPS_PR_ID"), 10),
     personalAccessToken: required("AZURE_DEVOPS_PAT"),
-    anthropicApiKey: required("ANTHROPIC_API_KEY"),
   };
 }
 
@@ -388,7 +386,7 @@ export const run: ReviewerPlugin["run"] = async (): Promise<void> => {
     `Reviewing Azure DevOps PR #${config.pullRequestId} in ${config.organization}/${config.project}`,
   );
 
-  const anthropic = new Anthropic({ apiKey: config.anthropicApiKey });
+  const llmClient = createLLMClient();
 
   const changedFiles = new Set<string>();
 
@@ -415,7 +413,7 @@ export const run: ReviewerPlugin["run"] = async (): Promise<void> => {
   };
 
   const reviewFn: ReviewFunction = (pr, options) => {
-    return reviewPullRequest(anthropic, pr, { inline: options?.requestInlineComments });
+    return reviewPullRequest(llmClient, pr, { inline: options?.requestInlineComments });
   };
 
   await runReviewSession(host, reviewFn, { inline: true });
