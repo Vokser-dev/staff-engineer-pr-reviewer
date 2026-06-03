@@ -15,10 +15,10 @@ interface CheckResult {
 }
 
 /** Git-URL form used in CLI hints and to verify the generated workflow content. */
-const PACKAGE_REF = "github:henriksvendsgard/staff-engineer-pr-reviewer";
+const PACKAGE_REF = "github:vokser-dev/staff-engineer-pr-reviewer";
 /** npm-style name used to detect if the consumer added the package as a project
  *  dependency (uncommon for CI tools, but possible). */
-const PACKAGE_NPM_NAME = "@henriksvendsgard/staff-engineer-pr-reviewer";
+const PACKAGE_NPM_NAME = "@vokser-dev/staff-engineer-pr-reviewer";
 
 function readIfExists(filePath: string): string | null {
   try {

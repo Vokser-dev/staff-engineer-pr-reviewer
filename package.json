@@ -1,5 +1,5 @@
 {
-  "name": "@henriksvendsgard/staff-engineer-pr-reviewer",
+  "name": "@vokser-dev/staff-engineer-pr-reviewer",
   "version": "1.0.0",
   "engines": {
     "node": ">=22"

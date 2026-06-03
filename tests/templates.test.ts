@@ -11,9 +11,9 @@ describe("renderGithubWorkflow", () => {
     expect(out).toContain("- main");
     expect(out).toContain("- develop");
     expect(out).toContain('node-version: "22"');
-    expect(out).toContain("npx --yes github:henriksvendsgard/staff-engineer-pr-reviewer github");
+    expect(out).toContain("npx --yes github:vokser-dev/staff-engineer-pr-reviewer github");
     // No git ref pin — consumers always track the default branch.
-    expect(out).not.toContain("github:henriksvendsgard/staff-engineer-pr-reviewer#");
+    expect(out).not.toContain("github:vokser-dev/staff-engineer-pr-reviewer#");
     expect(out).toContain("pull-requests: write");
     expect(out).toContain("${{ secrets.GITHUB_TOKEN }}");
     expect(out).toContain("${{ secrets.ANTHROPIC_API_KEY }}");
@@ -53,7 +53,7 @@ describe("renderAzurePipeline", () => {
     expect(out).toContain("- main");
     expect(out).toContain("- release/*");
     expect(out).toContain('versionSpec: "22.x"');
-    expect(out).toContain("npx --yes github:henriksvendsgard/staff-engineer-pr-reviewer azure");
+    expect(out).toContain("npx --yes github:vokser-dev/staff-engineer-pr-reviewer azure");
     expect(out).toContain("ANTHROPIC_API_KEY: $(ANTHROPIC_API_KEY)");
     expect(out).toContain("AZURE_DEVOPS_PAT: $(AZURE_DEVOPS_PAT)");
     expect(out).toContain("AZURE_DEVOPS_ORG: my-org");
