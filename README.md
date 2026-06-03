@@ -8,7 +8,7 @@ Automated pull request reviews powered by Claude. Drop into any GitHub or Azure 
 
 ## What it reviews
 
-Focused review of **changed lines only** — high signal, low noise. Reviews are written in **Norwegian (bokmål)**. It skips pre-existing issues, style nits, and unrelated files.
+Focused review of **changed lines only** — high signal, low noise. It skips pre-existing issues, style nits, and unrelated files.
 
 | Priority       | What it flags                                               |
 | -------------- | ----------------------------------------------------------- |
@@ -20,9 +20,9 @@ Focused review of **changed lines only** — high signal, low noise. Reviews are
 
 **Review output:**
 
-1. Sammendrag (2–3 setninger)
-2. Funn (med alvorlighetsgrad: critical, major, minor)
-3. Konklusjon: **GODKJENN** · **GODKJENN MED SMÅTING** · **BE OM ENDRINGER** · **BLOKKER**
+1. Summary (2–3 sentences)
+2. Findings (with severity: critical, major, minor)
+3. Verdict: **APPROVE** · **APPROVE WITH MINOR ISSUES** · **REQUEST CHANGES** · **BLOCK**
 
 Both platforms post up to 8 **inline** comments on critical/major/minor items in the diff. GitHub uses a formal review (`pulls.createReview`) with an event mapped from the verdict (`APPROVE`, `REQUEST_CHANGES`, or `COMMENT`). Azure posts inline thread comments and casts a reviewer vote (`Approved` for approve, `Rejected` for request-changes, no vote for comment).
 
@@ -31,7 +31,7 @@ Both platforms post up to 8 **inline** comments on critical/major/minor items in
 The package is installed directly from GitHub via `npx` — no npm registry, no extra auth, no `npm install` in your repo. All consumers always track the reviewer repo's default branch; there is no version pinning. In your target repository:
 
 ```bash
-npx github:henriksvendsgard/staff-engineer-pr-reviewer init
+npx github:vokser-dev/staff-engineer-pr-reviewer init
 ```
 
 The wizard detects whether you're on GitHub or Azure DevOps, asks a few questions (target branches, Node version), and writes the workflow/pipeline file for you. Then add the `ANTHROPIC_API_KEY` secret, commit the generated file, and open a PR.
@@ -39,18 +39,18 @@ The wizard detects whether you're on GitHub or Azure DevOps, asks a few question
 Verify the setup at any time:
 
 ```bash
-npx github:henriksvendsgard/staff-engineer-pr-reviewer doctor
+npx github:vokser-dev/staff-engineer-pr-reviewer doctor
 ```
 
 ## CLI commands
 
-| Command                                                         | What it does                                                                      |
-| --------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `npx github:henriksvendsgard/staff-engineer-pr-reviewer init`   | Interactive wizard — detects the platform and generates the right workflow file.  |
-| `npx github:henriksvendsgard/staff-engineer-pr-reviewer doctor` | Checks the current project's setup and reports anything missing or misconfigured. |
-| `npx github:henriksvendsgard/staff-engineer-pr-reviewer github` | Runs the GitHub reviewer (called by the generated workflow inside CI).            |
-| `npx github:henriksvendsgard/staff-engineer-pr-reviewer azure`  | Runs the Azure DevOps reviewer (called by the generated pipeline inside CI).      |
-| `npx github:henriksvendsgard/staff-engineer-pr-reviewer local`  | Reviews your uncommitted changes (or a specific SHA) and prints the result.       |
+| Command                                                   | What it does                                                                      |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `npx github:vokser-dev/staff-engineer-pr-reviewer init`   | Interactive wizard — detects the platform and generates the right workflow file.  |
+| `npx github:vokser-dev/staff-engineer-pr-reviewer doctor` | Checks the current project's setup and reports anything missing or misconfigured. |
+| `npx github:vokser-dev/staff-engineer-pr-reviewer github` | Runs the GitHub reviewer (called by the generated workflow inside CI).            |
+| `npx github:vokser-dev/staff-engineer-pr-reviewer azure`  | Runs the Azure DevOps reviewer (called by the generated pipeline inside CI).      |
+| `npx github:vokser-dev/staff-engineer-pr-reviewer local`  | Reviews your uncommitted changes (or a specific SHA) and prints the result.       |
 
 ## GitHub Actions
 
@@ -76,7 +76,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: npx --yes github:henriksvendsgard/staff-engineer-pr-reviewer github
+      - run: npx --yes github:vokser-dev/staff-engineer-pr-reviewer github
         env:
           INPUT_GITHUB-TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_ANTHROPIC-API-KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -115,7 +115,7 @@ jobs:
       - task: NodeTool@0
         inputs:
           versionSpec: "22.x"
-      - script: npx --yes github:henriksvendsgard/staff-engineer-pr-reviewer azure
+      - script: npx --yes github:vokser-dev/staff-engineer-pr-reviewer azure
         env:
           ANTHROPIC_API_KEY: $(ANTHROPIC_API_KEY)
           AZURE_DEVOPS_PAT: $(AZURE_DEVOPS_PAT)
@@ -143,10 +143,10 @@ You can run the reviewer against your local working tree without touching CI:
 
 ```bash
 # uncommitted changes vs HEAD
-npx github:henriksvendsgard/staff-engineer-pr-reviewer local
+npx github:vokser-dev/staff-engineer-pr-reviewer local
 
 # a specific commit or ref
-npx github:henriksvendsgard/staff-engineer-pr-reviewer local HEAD~1
+npx github:vokser-dev/staff-engineer-pr-reviewer local HEAD~1
 ```
 
 The local CLI reads `ANTHROPIC_API_KEY` from your environment (or a `.env` / `.env.local` in cwd) and renders the review interactively (summary block + inline comments + final verdict) — useful for previewing what the bot would say before pushing.

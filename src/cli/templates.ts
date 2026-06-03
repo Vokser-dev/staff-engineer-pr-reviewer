@@ -6,7 +6,7 @@
  *  pinning. To roll out a change to everyone, push to the default branch.
  *  To stage a change, set the repo's default branch to your test branch
  *  in GitHub settings; consumers will pick it up on the next PR build. */
-const PACKAGE_REF = "github:henriksvendsgard/staff-engineer-pr-reviewer";
+const PACKAGE_REF = "github:vokser-dev/staff-engineer-pr-reviewer";
 
 export interface GithubTemplateOptions {
   branches: string[];

@@ -118,7 +118,7 @@ async function initGithub(): Promise<void> {
     "3. Commit and push the workflow file",
     "4. Open a PR to trigger the first review",
     "",
-    "Run 'npx @henriksvendsgard/staff-engineer-pr-reviewer doctor' any time to verify the setup.",
+    "Run 'npx @vokser-dev/staff-engineer-pr-reviewer doctor' any time to verify the setup.",
   ].join("\n");
 
   p.note(nextSteps, "Next Steps");
@@ -201,7 +201,7 @@ async function initAzure(): Promise<void> {
     "",
     "We can't set Azure pipeline variables programmatically — follow steps 2-3 in the Azure DevOps UI.",
     "",
-    "Run 'npx @henriksvendsgard/staff-engineer-pr-reviewer doctor' to verify the setup.",
+    "Run 'npx @vokser-dev/staff-engineer-pr-reviewer doctor' to verify the setup.",
   ].join("\n");
 
   p.note(nextSteps, "Next Steps");

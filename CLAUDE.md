@@ -63,12 +63,12 @@ The codebase is structured as follows:
 
 ## Distribution
 
-The package is **not published to npm** and **does not use version pinning**. Consumers install it directly from the public GitHub repo via `npx github:henriksvendsgard/staff-engineer-pr-reviewer <command>`. Every consumer always tracks the default branch — there is no `#tag` / `#sha` suffix on the URL. The whole point is that consuming projects do **not** need to clone this repo, build it, or maintain a forked action; the reviewer is the same for everyone, and rollout is "push to default branch".
+The package is **not published to npm** and **does not use version pinning**. Consumers install it directly from the public GitHub repo via `npx github:vokser-dev/staff-engineer-pr-reviewer <command>`. Every consumer always tracks the default branch — there is no `#tag` / `#sha` suffix on the URL. The whole point is that consuming projects do **not** need to clone this repo, build it, or maintain a forked action; the reviewer is the same for everyone, and rollout is "push to default branch".
 
 - `bin.staff-engineer-pr-reviewer` points to `dist/cli/index.js`, so all five subcommands share one entrypoint. npm resolves the bin automatically because the package only declares one bin entry.
 - `scripts.prepack: "npm run build"` is what makes git-URL installs work. When `npm`/`npx` clones the repo to create a tarball, `prepack` runs `tsc` so `dist/` exists at install time (it's intentionally `.gitignore`d).
 - `package.json` ships `files: ["dist"]` only — no source — when packing a tarball.
-- The generated CI workflows always run `npx --yes github:henriksvendsgard/staff-engineer-pr-reviewer <github|azure>`. There is intentionally no GitHub Action wrapper (`action.yml`) — keeping the surface as one npx-able package avoids dist-bundle drift.
+- The generated CI workflows always run `npx --yes github:vokser-dev/staff-engineer-pr-reviewer <github|azure>`. There is intentionally no GitHub Action wrapper (`action.yml`) — keeping the surface as one npx-able package avoids dist-bundle drift.
 - **Releasing is just `git push` to the default branch.** No tags, no `npm publish`, no version bumps. Every consumer's next PR build picks up the change.
 - **Staging a change**: temporarily set the repo's default branch (e.g. to `develop`) in GitHub Settings; consumers automatically follow. Switch back to `main` when ready.
 - To later introduce versioning, see `PACKAGE_REF` in `src/cli/templates.ts`; reintroducing a `versionPin` field on the template options and a `#${ref}` suffix is a contained change.
