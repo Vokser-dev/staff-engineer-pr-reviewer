@@ -39,8 +39,8 @@ jobs:
       - name: Run Staff Engineer review
         run: npx --yes ${PACKAGE_REF} github
         env:
-          INPUT_GITHUB-TOKEN: \${{ secrets.GITHUB_TOKEN }}
-          INPUT_ANTHROPIC-API-KEY: \${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: \${{ secrets.ANTHROPIC_API_KEY }}
           # Optional overrides. Configure these as repository variables under
           # Settings → Secrets and variables → Actions → Variables. Leaving
           # them unset falls back to the reviewer's built-in defaults.
